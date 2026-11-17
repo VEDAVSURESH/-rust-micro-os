@@ -7,6 +7,7 @@ description = "An educational Rust Micro-OS"
 
 [dependencies]
 bootloader = "0.9.23"
+x86_64 = { version = "0.14.12", default-features = false, features = ["instructions", "abi_x86_interrupt"] }
 
 [package.metadata.bootimage]
 run-args = ["-serial", "stdio"]

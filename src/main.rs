@@ -1,8 +1,11 @@
 #![no_std]
 #![no_main]
+#![feature(abi_x86_interrupt)]
 
 use core::panic::PanicInfo;
 
+pub mod gdt;
+pub mod interrupts;
 pub mod serial;
 pub mod sync;
 pub mod vga_buffer;
@@ -30,28 +33,27 @@ pub extern "C" fn _start() -> ! {
     println!("Kernel console initialized.");
     println!("Screen: 80x25 VGA Text Buffer @ 0xb8000");
 
-    // Demonstrate formatted printing with variables
-    let version_major = 0;
-    let version_minor = 1;
-    let version_patch = 0;
-    println!("Version: {}.{}.{}", version_major, version_minor, version_patch);
-    println!("Base address: 0x{:x}", 0xb8000usize);
+    // Initialize CPU structures: Global Descriptor Table & Task State Segment
+    gdt::init();
+    serial_println!("[GDT] Initialized with dedicated Double Fault IST stack.");
+    println!("[GDT] Initialized with dedicated Double Fault stack.");
 
-    // Demonstrate automatic scrolling: write 30 numbered lines to trigger VGA scrolling
+    // Initialize Interrupt Descriptor Table & CPU exception handlers
+    interrupts::init_idt();
+    serial_println!("[IDT] Initialized with exception handlers (Breakpoint, Double Fault, Page Fault, GPF).");
+    println!("[IDT] Initialized with exception handlers.");
+
+    // Safely verify CPU exception handling via a Breakpoint trap (INT 3)
+    serial_println!("[TEST] Triggering software breakpoint exception (INT 3)...");
+    x86_64::instructions::interrupts::int3();
+    serial_println!("[OK] Successfully returned from breakpoint exception handler!");
+    println!("[OK] Breakpoint exception handled; execution resumed!");
+
     vga_buffer::WRITER
         .lock()
         .set_color(vga_buffer::Color::LightGreen, vga_buffer::Color::Black);
-    println!("[TEST] Demonstrating automatic VGA line scrolling:");
-    for i in 1..=30 {
-        println!("  -> Scroll test line {:02}/30", i);
-        serial_println!("[SCROLL TEST] Line {:02}/30 printed.", i);
-    }
-
-    vga_buffer::WRITER
-        .lock()
-        .set_color(vga_buffer::Color::Yellow, vga_buffer::Color::Black);
-    println!("[OK] Console and Serial drivers operational!");
-    serial_println!("[OK] Console and Serial drivers operational!");
+    println!("\n[OK] Core CPU structures operational!");
+    serial_println!("[OK] Core CPU structures operational!");
 
     // To test panic output, uncomment the line below:
     // panic!("Verification of enhanced panic handler!");
