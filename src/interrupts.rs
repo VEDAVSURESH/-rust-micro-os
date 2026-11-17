@@ -1,12 +1,15 @@
-//! Interrupt Descriptor Table (IDT) and CPU Exception Handlers.
+//! Interrupt Descriptor Table (IDT) and CPU Exception/Interrupt Handlers.
 //!
 //! The IDT is an array of 256 descriptor entries telling the CPU what code
-//! to execute when a hardware interrupt or software exception fires.
+//! to execute when a hardware interrupt or software exception fires:
+//! - Vectors 0..=31: CPU Exceptions (Breakpoint, Double Fault, Page Fault, GPF)
+//! - Vectors 32..=47: Hardware IRQs remapped from 8259 PIC (Vector 32 = IRQ 0 Timer)
 
 use core::cell::UnsafeCell;
 use x86_64::structures::idt::{InterruptDescriptorTable, InterruptStackFrame, PageFaultErrorCode};
 use crate::{println, serial_println};
 use crate::gdt;
+use crate::pic;
 
 /// Wrapper providing thread-safe interior mutability for static IDT storage.
 struct IdtStorage(UnsafeCell<InterruptDescriptorTable>);
@@ -35,8 +38,25 @@ pub fn init_idt() {
     // Exception 13: General Protection Fault (Fault)
     idt.general_protection_fault.set_handler_fn(general_protection_fault_handler);
 
+    // Hardware IRQ0: Timer Interrupt (Vector 32)
+    idt[pic::PIC_1_OFFSET as usize].set_handler_fn(timer_interrupt_handler);
+
     // Load IDT into CPU IDTR register
     idt.load();
+}
+
+/// Handler for Hardware Timer Interrupt (IRQ 0 / Vector 32).
+///
+/// SAFETY:
+/// - Must NOT perform blocking prints or acquire print locks.
+/// - Increments the global atomic tick counter.
+/// - Acknowledges the 8259 PIC by sending End Of Interrupt (EOI).
+extern "x86-interrupt" fn timer_interrupt_handler(_stack_frame: InterruptStackFrame) {
+    crate::timer::TICKS.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+
+    unsafe {
+        pic::PICS.lock().notify_end_of_interrupt(pic::PIC_1_OFFSET);
+    }
 }
 
 /// Handler for Breakpoint exceptions (INT 3).
