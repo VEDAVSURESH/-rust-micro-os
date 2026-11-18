@@ -3,7 +3,7 @@ name = "rust-micro-os"
 version = "0.1.0"
 edition = "2021"
 authors = ["Vedav"]
-description = "An educational Rust Micro-OS"
+description = "JainOS — A Rust-Based Educational Operating System"
 
 [dependencies]
 bootloader = "0.9.23"
