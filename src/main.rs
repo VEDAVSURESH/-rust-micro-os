@@ -7,15 +7,17 @@ use core::panic::PanicInfo;
 pub mod gdt;
 pub mod interrupts;
 pub mod logger;
+pub mod memory;
 pub mod pic;
 pub mod serial;
 pub mod sync;
 pub mod timer;
 pub mod vga_buffer;
 
+bootloader::entry_point!(kernel_main);
+
 /// Kernel entry point called by the bootloader.
-#[no_mangle]
-pub extern "C" fn _start() -> ! {
+fn kernel_main(boot_info: &'static bootloader::BootInfo) -> ! {
     // 1. Initial banner on serial and VGA
     serial_println!("========================================");
     serial_println!("      JainOS Kernel v0.1.0              ");
@@ -61,7 +63,74 @@ pub extern "C" fn _start() -> ! {
     log_warn!("Warn: Legacy 8259 PIC in use (APIC recommended for SMP).");
     log_error!("Error: Non-fatal test error log format verification.");
 
-    // 9. Normal kernel execution loop
+    // 9. Milestone 5 (Stage 1): Verify unaligned boundary safety and partial frame exclusion
+    memory::test_unaligned_boundary_safety();
+    log_info!("Unaligned boundary safety test suite PASSED (8/8 boundary cases verified).");
+
+    let mem_info = match memory::analyze_memory_map(&boot_info.memory_map) {
+        Ok(info) => info,
+        Err(e) => {
+            log_error!(
+                "CRITICAL: Memory map analysis failed due to arithmetic overflow: {:?}",
+                e
+            );
+            panic!("Memory map analysis arithmetic overflow");
+        }
+    };
+    log_info!(
+        "Memory map: {} total regions ({} usable).",
+        mem_info.total_regions,
+        mem_info.usable_regions
+    );
+    log_info!(
+        "Safe usable physical memory: {} KiB ({} frames, ~{} MiB).",
+        mem_info.total_usable_bytes / 1024,
+        mem_info.total_usable_frames,
+        mem_info.total_usable_bytes / (1024 * 1024)
+    );
+
+    let mut frame_allocator = unsafe { memory::BootInfoFrameAllocator::init(&boot_info.memory_map) };
+
+    log_info!("Starting physical frame allocation test (requesting 5 frames)...");
+    let mut test_frames = [None; 5];
+    for i in 0..5 {
+        use x86_64::structures::paging::FrameAllocator;
+        let frame = frame_allocator.allocate_frame();
+        match frame {
+            Some(f) => {
+                let addr = f.start_address().as_u64();
+                // 1. Verify 4 KiB alignment
+                assert_eq!(addr % 4096, 0, "Frame is not 4 KiB aligned");
+                // 2. Verify frame zero was not returned
+                assert_ne!(addr, 0, "Frame zero was allocated");
+                // 3. Verify frame is fully within a usable memory region
+                assert!(
+                    memory::is_frame_in_usable_region(&boot_info.memory_map, f),
+                    "Frame is not in usable region"
+                );
+                log_info!(
+                    "  Allocated frame [{}]: {:#010x} (4 KiB aligned, verified usable)",
+                    i,
+                    addr
+                );
+                test_frames[i] = Some(f);
+            }
+            None => {
+                log_error!("Failed to allocate physical frame [{}]", i);
+                panic!("Physical frame allocation failed");
+            }
+        }
+    }
+
+    // 4. Verify all 5 allocated frames are distinct (no duplicates)
+    for i in 0..5 {
+        for j in (i + 1)..5 {
+            assert_ne!(test_frames[i], test_frames[j], "Duplicate frame allocated");
+        }
+    }
+    log_info!("Physical frame allocation test PASSED (5 distinct usable frames verified).");
+
+    // 10. Normal kernel execution loop
     // Prints timer milestone updates safely from outside the interrupt handler.
     let mut last_reported_sec = 0;
 
