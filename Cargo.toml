@@ -6,7 +6,7 @@ authors = ["Vedav"]
 description = "JainOS — A Rust-Based Educational Operating System"
 
 [dependencies]
-bootloader = "0.9.23"
+bootloader = { version = "0.9.23", features = ["map_physical_memory"] }
 x86_64 = { version = "0.14.12", default-features = false, features = ["instructions", "abi_x86_interrupt"] }
 
 [package.metadata.bootimage]

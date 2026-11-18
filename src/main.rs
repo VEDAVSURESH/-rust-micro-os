@@ -1,9 +1,13 @@
 #![no_std]
 #![no_main]
 #![feature(abi_x86_interrupt)]
+#![feature(alloc_error_handler)]
+
+extern crate alloc;
 
 use core::panic::PanicInfo;
 
+pub mod allocator;
 pub mod gdt;
 pub mod interrupts;
 pub mod logger;
@@ -130,7 +134,72 @@ fn kernel_main(boot_info: &'static bootloader::BootInfo) -> ! {
     }
     log_info!("Physical frame allocation test PASSED (5 distinct usable frames verified).");
 
-    // 10. Normal kernel execution loop
+    // 10. Milestone 5 (Stage 2): Paging & Kernel Heap Initialization
+    let raw_offset = boot_info.physical_memory_offset;
+    if raw_offset == 0 || raw_offset == u64::MAX {
+        log_error!(
+            "CRITICAL: Invalid physical memory offset from bootloader: {:#018x}",
+            raw_offset
+        );
+        panic!("Invalid physical memory offset: bootloader map_physical_memory feature unpopulated");
+    }
+    let phys_mem_offset = match x86_64::VirtAddr::try_new(raw_offset) {
+        Ok(addr) => addr,
+        Err(_) => {
+            log_error!(
+                "CRITICAL: Physical memory offset is not canonical: {:#018x}",
+                raw_offset
+            );
+            panic!("Non-canonical physical memory offset");
+        }
+    };
+    let mut mapper = unsafe { memory::init_offset_page_table(phys_mem_offset) };
+
+    match allocator::init_heap(&mut mapper, &mut frame_allocator) {
+        Ok(heap_size) => {
+            log_info!(
+                "Kernel heap initialized at {:#x} (size: {} KiB).",
+                allocator::HEAP_START,
+                heap_size / 1024
+            );
+        }
+        Err(e) => {
+            log_error!("Failed to initialize kernel heap: {:?}", e);
+            panic!("Heap initialization failed");
+        }
+    }
+
+    let initial_stats = allocator::ALLOCATOR.stats();
+    log_info!(
+        "Initial heap stats: {} B total, {} B used, {} B free | Allocs: {}, Frees: {}, Fails: {}",
+        initial_stats.heap_size,
+        initial_stats.total_allocated_bytes,
+        initial_stats.total_free_bytes,
+        initial_stats.alloc_count,
+        initial_stats.dealloc_count,
+        initial_stats.alloc_failures
+    );
+
+    log_info!("Running kernel heap allocator test suite...");
+    allocator::test_heap_allocations();
+    log_info!("Kernel heap allocator test suite PASSED (14/14 test scenarios verified).");
+
+    let post_stats = allocator::ALLOCATOR.stats();
+    log_info!(
+        "Post-test heap stats: {} B total, {} B used, {} B free | Allocs: {}, Frees: {}, Fails: {}",
+        post_stats.heap_size,
+        post_stats.total_allocated_bytes,
+        post_stats.total_free_bytes,
+        post_stats.alloc_count,
+        post_stats.dealloc_count,
+        post_stats.alloc_failures
+    );
+    assert_eq!(
+        post_stats.total_allocated_bytes, 0,
+        "Memory leak detected: active allocations remain after test suite"
+    );
+
+    // 11. Normal kernel execution loop
     // Prints timer milestone updates safely from outside the interrupt handler.
     let mut last_reported_sec = 0;
 
@@ -168,4 +237,10 @@ fn panic(info: &PanicInfo) -> ! {
     loop {
         core::hint::spin_loop();
     }
+}
+
+/// Handler called when a heap allocation cannot be satisfied by the global allocator.
+#[alloc_error_handler]
+fn alloc_error_handler(layout: core::alloc::Layout) -> ! {
+    panic!("kernel heap allocation error: {:?}", layout);
 }

@@ -7,8 +7,26 @@
 //! - Checked arithmetic for all memory statistics and frame indexing with documented overflow handling.
 
 use bootloader::bootinfo::{MemoryMap, MemoryRegion, MemoryRegionType};
-use x86_64::structures::paging::{FrameAllocator, PhysFrame, Size4KiB};
-use x86_64::PhysAddr;
+use x86_64::registers::control::Cr3;
+use x86_64::structures::paging::{FrameAllocator, OffsetPageTable, PageTable, PhysFrame, Size4KiB};
+use x86_64::{PhysAddr, VirtAddr};
+
+/// Initializes an `OffsetPageTable` pointing to the active Level 4 Page Table.
+///
+/// # Safety
+///
+/// The caller must guarantee that the complete physical memory is mapped to
+/// virtual memory at the passed `physical_memory_offset`.
+/// Also, this function must be called only once to avoid aliasing mutable references
+/// to the active page table.
+pub unsafe fn init_offset_page_table(physical_memory_offset: VirtAddr) -> OffsetPageTable<'static> {
+    let (level_4_table_frame, _) = Cr3::read();
+    let phys = level_4_table_frame.start_address();
+    let virt = physical_memory_offset + phys.as_u64();
+    let page_table_ptr: *mut PageTable = virt.as_mut_ptr();
+    let level_4_table: &'static mut PageTable = &mut *page_table_ptr;
+    OffsetPageTable::new(level_4_table, physical_memory_offset)
+}
 
 /// Physical memory statistics derived strictly from safe, non-partial usable memory frames.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
