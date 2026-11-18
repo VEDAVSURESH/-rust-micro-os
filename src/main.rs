@@ -15,6 +15,7 @@ pub mod memory;
 pub mod pic;
 pub mod serial;
 pub mod sync;
+pub mod task;
 pub mod timer;
 pub mod vga_buffer;
 
@@ -199,7 +200,10 @@ fn kernel_main(boot_info: &'static bootloader::BootInfo) -> ! {
         "Memory leak detected: active allocations remain after test suite"
     );
 
-    // 11. Normal kernel execution loop
+    // 11. Milestone 6 (Stage 1): Cooperative Context Switching Test
+    task::test_cooperative_context_switching();
+
+    // 12. Normal kernel execution loop
     // Prints timer milestone updates safely from outside the interrupt handler.
     let mut last_reported_sec = 0;
 
