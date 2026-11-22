@@ -27,7 +27,7 @@ impl AboutApp {
         canvas.draw_string(cx + 34, cy + 24, "J", 0x0038BDF8);
 
         canvas.draw_string(cx + 72, cy + 16, "JainOS Micro Operating System", 0x00FFFFFF);
-        canvas.draw_string(cx + 72, cy + 34, "Version 0.3.3 (Native Graphical Desktop Edition)", 0x0093C5FD);
+        canvas.draw_string(cx + 72, cy + 34, "Version 0.3.4 (Native Graphical Desktop Edition)", 0x0093C5FD);
 
         // Details Container Box
         let box_y = cy + 74;

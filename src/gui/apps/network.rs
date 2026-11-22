@@ -1,16 +1,16 @@
-//! Network Control Center Application for JainOS (v0.3.3).
+//! Network Control Center Application for JainOS (v0.3.4).
 //!
 //! Features:
-//! 1. WI-FI CONNECTION: Independent section with live connection state, connected SSID,
+//! 1. Current Connection: Shows live connection state, connected SSID,
 //!    signal %, security, adapter name, [ SCAN ], [ DISCONNECT ], and [ Wi-Fi: ON/OFF ].
-//! 2. GUEST ETHERNET (eth0): Independent section for Intel 82540EM Gigabit NIC, showing
-//!    interface state (UP/DOWN), IPv4 address, subnet, gateway, DNS, live Rx/Tx traffic counters,
+//! 2. Ethernet Connection: Shows Intel 82540EM Gigabit NIC state (UP/DOWN),
+//!    IPv4 address, subnet, gateway, DNS, live Rx/Tx traffic counters,
 //!    [ RENEW IP ] (DHCP lease refresh), [ PING 1.1.1.1 ], and [ TEST DNS ].
-//! 3. AVAILABLE WI-FI NETWORKS: Independent section showing genuine scanned host SSIDs,
-//!    signal bars, security types, saved profile indicators, interactive selection,
-//!    password entry with asterisk masking, and [ CONNECT ].
-//! 4. LIVE STATUS REFRESH: Immediate updates after connect, disconnect, toggle, scan, or renew,
-//!    displaying CONNECTED, DISCONNECTED, HOST BRIDGE UNAVAILABLE, or UNKNOWN.
+//! 3. Wi-Fi Networks: Shows genuine scanned host SSIDs, signal bars, security types,
+//!    saved profile indicators, interactive selection, password entry with bullet masking (••••••),
+//!    visible focus indicator, Backspace editing, and [ CONNECT ].
+//! 4. Clean interface: Uncluttered header without redundant badges, clean section headers,
+//!    truthful live status monitoring.
 
 use alloc::format;
 use alloc::string::String;
@@ -106,24 +106,33 @@ impl NetworkApp {
 
     /// Connects to the currently selected network using the entered password.
     pub fn connect_selected(&mut self) {
-        if let Some(idx) = self.selected_network {
-            if idx < self.wifi_telemetry.available_networks.len() {
-                let target_ssid = self.wifi_telemetry.available_networks[idx].ssid.clone();
-                self.connection_status = String::from("CONNECTING");
-                self.log_message = format!("Connecting to '{}' via Windows WLAN...", target_ssid);
-
-                let pwd = self.password_input.clone();
-                if request_connect_wifi_key(&target_ssid, &pwd) {
-                    self.log_message = format!("Connected successfully to '{}'!", target_ssid);
+        let idx = match self.selected_network {
+            Some(i) if i < self.wifi_telemetry.available_networks.len() => i,
+            _ => {
+                if !self.wifi_telemetry.available_networks.is_empty() {
+                    self.selected_network = Some(0);
+                    0
                 } else {
-                    self.log_message = format!("Failed to connect to '{}' (check password/profile)", target_ssid);
+                    self.log_message = String::from("No Wi-Fi networks available to connect");
+                    return;
                 }
-                // Immediate refresh of actual hardware state
-                self.refresh_status();
             }
+        };
+
+        let target_ssid = self.wifi_telemetry.available_networks[idx].ssid.clone();
+        self.connection_status = String::from("CONNECTING");
+        self.log_message = format!("Connecting to '{}' via Windows WLAN...", target_ssid);
+
+        let pwd = self.password_input.clone();
+        if request_connect_wifi_key(&target_ssid, &pwd) {
+            self.log_message = format!("Connected successfully to '{}'!", target_ssid);
+            self.password_input.clear();
+            self.password_focused = false;
         } else {
-            self.log_message = String::from("Select a Wi-Fi network from the list first");
+            self.log_message = format!("Failed to connect to '{}' (check password/profile)", target_ssid);
         }
+        // Immediate refresh of actual hardware state
+        self.refresh_status();
     }
 
     /// Disconnects from the current Wi-Fi network.
@@ -204,13 +213,19 @@ impl NetworkApp {
         if self.password_focused {
             match c {
                 '\n' => {
-                    self.password_focused = false;
                     self.connect_selected();
                 }
                 '\x08' => {
                     self.password_input.pop();
                 }
-                '\x1b' | '\t' => {
+                '\x1b' => {
+                    // Cancel password entry and clear
+                    self.password_focused = false;
+                    self.password_input.clear();
+                    self.log_message = String::from("Password entry cancelled");
+                }
+                '\t' => {
+                    // Tab toggles focus off
                     self.password_focused = false;
                 }
                 c if c >= ' ' && c <= '~' => {
@@ -235,78 +250,127 @@ impl NetworkApp {
             '\t' => {
                 self.password_focused = true;
             }
+            'j' | 'J' | '\u{2193}' => {
+                // Select next network in list
+                let count = self.wifi_telemetry.available_networks.len();
+                if count > 0 {
+                    let next = match self.selected_network {
+                        Some(idx) => (idx + 1) % count,
+                        None => 0,
+                    };
+                    self.selected_network = Some(next);
+                    self.password_input.clear();
+                    let net = &self.wifi_telemetry.available_networks[next];
+                    self.log_message = format!("Selected: '{}' ({}, {})", net.ssid, net.signal, net.security);
+                }
+            }
+            'k' | 'K' | '\u{2191}' => {
+                // Select previous network in list
+                let count = self.wifi_telemetry.available_networks.len();
+                if count > 0 {
+                    let prev = match self.selected_network {
+                        Some(idx) if idx > 0 => idx - 1,
+                        Some(_) | None => count - 1,
+                    };
+                    self.selected_network = Some(prev);
+                    self.password_input.clear();
+                    let net = &self.wifi_telemetry.available_networks[prev];
+                    self.log_message = format!("Selected: '{}' ({}, {})", net.ssid, net.signal, net.security);
+                }
+            }
+            '\n' => {
+                // Enter when not focused focuses password field
+                self.password_focused = true;
+            }
             _ => {}
         }
     }
 
     /// Handles mouse clicks inside the Network window client area.
     pub fn handle_click(&mut self, rel_x: i32, rel_y: i32) {
-        // --- SECTION 1: WI-FI CONNECTION BUTTONS (y: 198..224) ---
-        if rel_y >= 198 && rel_y <= 224 {
+        // --- SECTION 1: Current Connection BUTTONS (rel_y: 198..224, rel_x: < 340) ---
+        if rel_y >= 198 && rel_y <= 224 && rel_x < 340 {
             // [ SCAN ] at (22..88)
             if rel_x >= 22 && rel_x < 88 {
+                self.password_focused = false;
                 self.scan_wifi();
                 return;
             }
             // [ DISCONNECT ] at (96..202)
             if rel_x >= 96 && rel_x < 202 {
+                self.password_focused = false;
                 self.disconnect_current();
                 return;
             }
-            // [ Wi-Fi: ON / OFF ] at (210..318)
-            if rel_x >= 210 && rel_x < 318 {
+            // [ Wi-Fi: ON / OFF ] at (210..328)
+            if rel_x >= 210 && rel_x < 328 {
+                self.password_focused = false;
                 self.toggle_wifi();
                 return;
             }
         }
 
-        // --- SECTION 2: GUEST ETHERNET BUTTONS (y: 376..402) ---
-        if rel_y >= 376 && rel_y <= 402 {
+        // --- SECTION 2: Ethernet Connection BUTTONS (rel_y: 368..394, rel_x: < 340) ---
+        if rel_y >= 368 && rel_y <= 394 && rel_x < 340 {
             // [ RENEW IP ] at (22..108)
             if rel_x >= 22 && rel_x < 108 {
+                self.password_focused = false;
                 self.renew_ip();
                 return;
             }
             // [ PING 1.1.1.1 ] at (116..222)
             if rel_x >= 116 && rel_x < 222 {
+                self.password_focused = false;
                 self.ping_test();
                 return;
             }
-            // [ TEST DNS ] at (230..326)
-            if rel_x >= 230 && rel_x < 326 {
+            // [ TEST DNS ] at (230..328)
+            if rel_x >= 230 && rel_x < 328 {
+                self.password_focused = false;
                 self.dns_test();
                 return;
             }
         }
 
-        // --- SECTION 3: AVAILABLE WI-FI NETWORKS TABLE ROWS (rel_x: 354..720, rel_y: 104..265) ---
-        if rel_x >= 354 && rel_x < 720 && rel_y >= 104 && rel_y < 265 {
-            let row_idx = ((rel_y - 104) / 22) as usize + self.scroll_offset;
+        // --- SECTION 3: Wi-Fi Networks TABLE ROWS (rel_x: 356..724, rel_y: 114..268) ---
+        if rel_x >= 356 && rel_x < 724 && rel_y >= 114 && rel_y < 268 {
+            let row_idx = ((rel_y - 114) / 22) as usize + self.scroll_offset;
             if row_idx < self.wifi_telemetry.available_networks.len() {
                 self.selected_network = Some(row_idx);
                 let net = &self.wifi_telemetry.available_networks[row_idx];
-                self.log_message = format!("Selected Wi-Fi: '{}' (Signal: {}, Sec: {})", net.ssid, net.signal, net.security);
+                self.log_message = format!("Selected: '{}' (Signal: {}, Sec: {})", net.ssid, net.signal, net.security);
                 self.password_input.clear();
+                // Automatically activate password box if the network requires security
+                if !net.security.to_lowercase().contains("open") {
+                    self.password_focused = true;
+                }
                 return;
             }
         }
 
-        // --- SECTION 3: PASSWORD BOX & CONNECT BUTTON (y: 304..330) ---
-        if rel_y >= 304 && rel_y <= 330 {
-            // Password input box at (428..590)
-            if rel_x >= 428 && rel_x < 590 {
+        // --- SECTION 3: PASSWORD BOX & ACTION BUTTONS (rel_y: 362..394, rel_x: >= 356) ---
+        if rel_y >= 362 && rel_y <= 394 && rel_x >= 356 {
+            // Password label or input box (rel_x: 356..596) -> Activate Password Focus
+            if rel_x >= 356 && rel_x < 596 {
                 self.password_focused = true;
                 return;
-            } else {
-                self.password_focused = false;
             }
-
-            // [ CONNECT ] at (600..710)
-            if rel_x >= 600 && rel_x < 710 {
+            // [ CONNECT ] Button (rel_x: 598..690)
+            if rel_x >= 598 && rel_x < 690 {
                 self.connect_selected();
                 return;
             }
+            // [ X ] Clear Button (rel_x: 692..724)
+            if rel_x >= 692 && rel_x < 724 {
+                self.password_input.clear();
+                self.password_focused = false;
+                self.log_message = String::from("Password field cleared");
+                return;
+            }
         }
+
+        // Clicking anywhere else in the client area clears focus
+        self.password_focused = false;
     }
 
     /// Renders the complete Network application UI.
@@ -324,7 +388,7 @@ impl NetworkApp {
         canvas.draw_gradient_v(cx, cy, cw, 42, 0x001C2541, 0x000B132B);
         canvas.fill_rect(cx, cy + 42, cw, 1, 0x0038BDF8);
 
-        // Header Title
+        // Header Title (clean, uncluttered without redundant top-right badges)
         canvas.draw_string(cx + 16, cy + 8, "NETWORK", 0x0038BDF8);
         canvas.draw_string(
             cx + 16,
@@ -333,8 +397,6 @@ impl NetworkApp {
             0x0090E0EF,
         );
 
-        // Header Badges on Top Right:
-        // Wi-Fi Connection Status Badge
         let status_color = match self.connection_status.as_str() {
             "CONNECTED" => 0x0022C55E, // Green
             "CONNECTING" => 0x00FACC15, // Yellow
@@ -343,22 +405,9 @@ impl NetworkApp {
             "HOST BRIDGE UNAVAILABLE" => 0x00F87171, // Light Red
             _ => 0x00FACC15, // Yellow
         };
-        let wifi_badge_text = format!("Wi-Fi: {}", self.connection_status);
-        let wifi_badge_w = (wifi_badge_text.len() * 8 + 16) as i32;
-        let wifi_badge_x = cx + cw - wifi_badge_w - 120;
-        canvas.fill_rect(wifi_badge_x, cy + 9, wifi_badge_w, 24, 0x001E293B);
-        canvas.draw_rect(wifi_badge_x, cy + 9, wifi_badge_w, 24, status_color);
-        canvas.draw_string(wifi_badge_x + 8, cy + 13, &wifi_badge_text, status_color);
 
-        // Guest Ethernet Status Badge (Independently computed from eth0!)
         let cfg = *crate::net::NET_CONFIG.lock();
         let eth_col = if cfg.configured { 0x0038BDF8 } else { 0x0064748B };
-        let eth_text = if cfg.configured { "eth0: UP" } else { "eth0: DOWN" };
-        let eth_badge_x = cx + cw - 110;
-        canvas.fill_rect(eth_badge_x, cy + 9, 98, 24, 0x001E293B);
-        canvas.draw_rect(eth_badge_x, cy + 9, 98, 24, eth_col);
-        canvas.fill_rect(eth_badge_x + 8, cy + 17, 8, 8, eth_col);
-        canvas.draw_string(eth_badge_x + 22, cy + 13, eth_text, 0x00FFFFFF);
 
         // Network Summary Strip (cy + 45 .. cy + 65)
         let strip_y = cy + 45;
@@ -375,7 +424,7 @@ impl NetworkApp {
         canvas.draw_string(cx + 18, strip_y + 4, &ip_summary, 0x0094A3B8);
 
         // =========================================================================
-        // SECTION 1: WI-FI CONNECTION (Left Column, Top)
+        // SECTION 1: Current Connection (Left Column, Top)
         // =========================================================================
         let sec1_x = cx + 12;
         let sec1_y = cy + 70;
@@ -385,9 +434,9 @@ impl NetworkApp {
         canvas.fill_rect(sec1_x, sec1_y, sec1_w, sec1_h, 0x00111D4A);
         canvas.draw_rect(sec1_x, sec1_y, sec1_w, sec1_h, 0x001F3160);
 
-        // Section Title Header
+        // Section Title Header: "Current Connection"
         canvas.fill_rect(sec1_x + 1, sec1_y + 1, sec1_w - 2, 22, 0x001E293B);
-        canvas.draw_string(sec1_x + 8, sec1_y + 4, "WI-FI CONNECTION", 0x0038BDF8);
+        canvas.draw_string(sec1_x + 8, sec1_y + 4, "Current Connection", 0x0038BDF8);
 
         // Connection status line
         canvas.draw_string(sec1_x + 10, sec1_y + 28, "Status:   ", 0x0094A3B8);
@@ -422,7 +471,7 @@ impl NetworkApp {
         }
         canvas.draw_string(sec1_x + 90, sec1_y + 100, &adapter_disp, 0x00E2E8F0);
 
-        // Action Buttons Row for Wi-Fi: [ SCAN ] [ DISCONNECT ] [ Wi-Fi: ON/OFF ]
+        // Action Buttons Row: [ SCAN ] [ DISCONNECT ] [ Wi-Fi: ON/OFF ]
         let wifi_btn_y = sec1_y + 128;
 
         // [ SCAN ] button
@@ -446,7 +495,7 @@ impl NetworkApp {
         canvas.draw_string(sec1_x + 206, wifi_btn_y + 5, wf_text, 0x00FFFFFF);
 
         // =========================================================================
-        // SECTION 2: GUEST ETHERNET (Left Column, Bottom)
+        // SECTION 2: Ethernet Connection (Left Column, Bottom)
         // =========================================================================
         let sec2_x = cx + 12;
         let sec2_y = sec1_y + sec1_h + 8;
@@ -456,12 +505,12 @@ impl NetworkApp {
         canvas.fill_rect(sec2_x, sec2_y, sec2_w, sec2_h, 0x00111D4A);
         canvas.draw_rect(sec2_x, sec2_y, sec2_w, sec2_h, 0x001F3160);
 
-        // Section Title Header
+        // Section Title Header: "Ethernet Connection"
         canvas.fill_rect(sec2_x + 1, sec2_y + 1, sec2_w - 2, 22, 0x001E293B);
-        canvas.draw_string(sec2_x + 8, sec2_y + 4, "GUEST ETHERNET (eth0)", 0x0038BDF8);
+        canvas.draw_string(sec2_x + 8, sec2_y + 4, "Ethernet Connection", 0x0038BDF8);
 
         // Interface status
-        let eth_status_str = if cfg.configured { "UP (1000 Mbps Full-Duplex)" } else { "DOWN (Offline)" };
+        let eth_status_str = if cfg.configured { "Intel 82540EM (1000 Mbps)" } else { "Offline / Unconfigured" };
         canvas.draw_string(sec2_x + 10, sec2_y + 28, "Interface:", 0x0094A3B8);
         canvas.draw_string(sec2_x + 90, sec2_y + 28, eth_status_str, eth_col);
 
@@ -492,7 +541,7 @@ impl NetworkApp {
         canvas.draw_string(sec2_x + 10, sec2_y + 100, "Traffic:  ", 0x0094A3B8);
         canvas.draw_string(sec2_x + 90, sec2_y + 100, &traf_str, 0x004ADE80);
 
-        // Action Buttons Row for Ethernet: [ RENEW IP ] [ PING 1.1.1.1 ] [ TEST DNS ]
+        // Action Buttons Row: [ RENEW IP ] [ PING 1.1.1.1 ] [ TEST DNS ]
         let eth_btn_y = sec2_y + 128;
 
         // [ RENEW IP ] button
@@ -511,7 +560,7 @@ impl NetworkApp {
         canvas.draw_string(sec2_x + 226, eth_btn_y + 5, "TEST DNS", 0x00FACC15);
 
         // =========================================================================
-        // SECTION 3: AVAILABLE WI-FI NETWORKS (Right Column)
+        // SECTION 3: Wi-Fi Networks (Right Column)
         // =========================================================================
         let sec3_x = sec1_x + sec1_w + 12;
         let sec3_y = sec1_y;
@@ -521,9 +570,9 @@ impl NetworkApp {
         canvas.fill_rect(sec3_x, sec3_y, sec3_w, sec3_h, 0x00111D4A);
         canvas.draw_rect(sec3_x, sec3_y, sec3_w, sec3_h, 0x001F3160);
 
-        // Section Title Header
+        // Section Title Header: "Wi-Fi Networks"
         canvas.fill_rect(sec3_x + 1, sec3_y + 1, sec3_w - 2, 22, 0x001E293B);
-        canvas.draw_string(sec3_x + 8, sec3_y + 4, "AVAILABLE WI-FI NETWORKS (HOST SCAN)", 0x0038BDF8);
+        canvas.draw_string(sec3_x + 8, sec3_y + 4, "Wi-Fi Networks", 0x0038BDF8);
 
         // Table Column Header
         let th_y = sec3_y + 24;
@@ -593,48 +642,75 @@ impl NetworkApp {
             canvas.draw_string(sec3_x + 16, sec3_y + 100, "Click [ SCAN ] to perform a fresh scan", 0x0038BDF8);
         }
 
-        // Sub-Card inside Section 3: Connection & Password Entry (y: sec3_y + sec3_h - 68)
-        let card_y = sec3_y + sec3_h - 66;
-        canvas.fill_rect(sec3_x + 4, card_y, sec3_w - 8, 60, 0x000F172A);
-        canvas.draw_rect(sec3_x + 4, card_y, sec3_w - 8, 60, 0x001E293B);
+        // Sub-Card inside Section 3: Connection & Password Entry (y: sec3_y + 266)
+        let card_x = sec3_x + 4;
+        let card_y = sec3_y + 266;
+        let card_w = sec3_w - 8;
+        let card_h = 60;
+        canvas.fill_rect(card_x, card_y, card_w, card_h, 0x000F172A);
+        canvas.draw_rect(card_x, card_y, card_w, card_h, 0x001E293B);
 
-        // Network: [Selected Network]
+        // Row 1: Selected Network Name
         let sel_name = match self.selected_network {
             Some(idx) if idx < self.wifi_telemetry.available_networks.len() => {
                 self.wifi_telemetry.available_networks[idx].ssid.clone()
             }
             _ => String::from("None selected (click list above)"),
         };
-        canvas.draw_string(sec3_x + 10, card_y + 6, "Network: ", 0x0094A3B8);
-        canvas.draw_string(sec3_x + 75, card_y + 6, &sel_name, 0x00FFFFFF);
+        canvas.draw_string(card_x + 8, card_y + 6, "Network: ", 0x0094A3B8);
+        canvas.draw_string(card_x + 75, card_y + 6, &sel_name, 0x00FFFFFF);
 
-        // Password input field
-        canvas.draw_string(sec3_x + 10, card_y + 28, "Password:", 0x0094A3B8);
-        let pwd_box_x = sec3_x + 75;
-        let pwd_box_y = card_y + 26;
+        // Row 2: Password input field with visible focus indicator & bullet masking
+        let pwd_row_y = card_y + 28;
+        canvas.draw_string(card_x + 8, pwd_row_y + 4, "Password:", 0x0094A3B8);
+
+        let pwd_box_x = card_x + 75;
+        let pwd_box_y = pwd_row_y;
+        let pwd_box_w = 160;
+        let pwd_box_h = 24;
+
         let pwd_border = if self.password_focused { 0x0038BDF8 } else { 0x00475569 };
-        canvas.fill_rect(pwd_box_x, pwd_box_y, 160, 22, 0x00020617);
-        canvas.draw_rect(pwd_box_x, pwd_box_y, 160, 22, pwd_border);
+        let pwd_bg = if self.password_focused { 0x000F172A } else { 0x00020617 };
+        canvas.fill_rect(pwd_box_x, pwd_box_y, pwd_box_w, pwd_box_h, pwd_bg);
+        canvas.draw_rect(pwd_box_x, pwd_box_y, pwd_box_w, pwd_box_h, pwd_border);
+        if self.password_focused {
+            // High-visibility focus ring
+            canvas.draw_rect(pwd_box_x + 1, pwd_box_y + 1, pwd_box_w - 2, pwd_box_h - 2, 0x000284C7);
+        }
 
         if self.password_input.is_empty() {
-            let placeholder = if self.password_focused { "|" } else { "(Wi-Fi Password)" };
-            canvas.draw_string(pwd_box_x + 6, pwd_box_y + 5, placeholder, 0x0064748B);
+            let placeholder = if self.password_focused { "|" } else { "Enter Password" };
+            let ph_color = if self.password_focused { 0x0038BDF8 } else { 0x0064748B };
+            canvas.draw_string(pwd_box_x + 8, pwd_box_y + 4, placeholder, ph_color);
         } else {
             let mut masked = String::new();
             for _ in 0..self.password_input.len() {
-                masked.push('*');
+                masked.push('•');
             }
             if self.password_focused {
-                masked.push('|');
+                let ticks = crate::timer::current_ticks();
+                if (ticks / 30) % 2 == 0 {
+                    masked.push('|');
+                }
             }
-            canvas.draw_string(pwd_box_x + 6, pwd_box_y + 5, &masked, 0x00F8FAFC);
+            canvas.draw_string(pwd_box_x + 8, pwd_box_y + 4, &masked, 0x00F8FAFC);
         }
 
         // [ CONNECT ] Button
-        let conn_btn_x = pwd_box_x + 170;
-        canvas.fill_rect(conn_btn_x, pwd_box_y, 105, 22, 0x00059669);
-        canvas.draw_rect(conn_btn_x, pwd_box_y, 105, 22, 0x0034D399);
-        canvas.draw_string(conn_btn_x + 18, pwd_box_y + 4, "CONNECT", 0x00FFFFFF);
+        let conn_btn_x = pwd_box_x + 168;
+        let conn_btn_w = 88;
+        let conn_btn_h = 24;
+        canvas.fill_rect(conn_btn_x, pwd_box_y, conn_btn_w, conn_btn_h, 0x00059669);
+        canvas.draw_rect(conn_btn_x, pwd_box_y, conn_btn_w, conn_btn_h, 0x0034D399);
+        canvas.draw_string(conn_btn_x + 16, pwd_box_y + 4, "CONNECT", 0x00FFFFFF);
+
+        // [ X ] Clear Password Button
+        let clr_btn_x = conn_btn_x + 94;
+        let clr_btn_w = 26;
+        let clr_btn_h = 24;
+        canvas.fill_rect(clr_btn_x, pwd_box_y, clr_btn_w, clr_btn_h, 0x00334155);
+        canvas.draw_rect(clr_btn_x, pwd_box_y, clr_btn_w, clr_btn_h, 0x0064748B);
+        canvas.draw_string(clr_btn_x + 9, pwd_box_y + 4, "X", 0x00E2E8F0);
 
         // =========================================================================
         // FOOTER: Status & Event Diagnostic Console (Across full width)

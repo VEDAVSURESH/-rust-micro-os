@@ -1,4 +1,4 @@
-//! Modern Native Web Browser Application for JainOS (v0.3.3).
+//! Modern Native Web Browser Application for JainOS (v0.3.4).
 //!
 //! Features:
 //! - Multi-tab browsing architecture with tab switching, new tab (+), and close (x)
@@ -98,7 +98,7 @@ impl BrowserApp {
             tabs: Vec::new(),
             active_tab: 0,
             url: String::from("about:start"),
-            status: String::from("Ready • JainOS WebEngine v0.3.3"),
+            status: String::from("Ready • JainOS WebEngine v0.3.4"),
             page_title: String::from("Start Page"),
             history: Vec::new(),
             history_idx: 0,
@@ -263,7 +263,7 @@ impl BrowserApp {
     /// Loads the official JainOS Start Page (about:start).
     pub fn load_start_page(&mut self) {
         self.page_title = String::from("Start Page");
-        self.status = String::from("Ready • JainOS WebEngine v0.3.3");
+        self.status = String::from("Ready • JainOS WebEngine v0.3.4");
         self.blocks.clear();
 
         self.blocks.push(HtmlBlock::Heading1(String::from("JainOS Web Browser")));
@@ -1255,7 +1255,7 @@ impl BrowserApp {
         canvas.draw_string(cx + 24, sb_bar_y + 5, &self.status, 0x0038BDF8);
 
         // Engine badge on right
-        let engine_str = "JainOS WebEngine v0.3.3 (No-STD)";
+        let engine_str = "JainOS WebEngine v0.3.4 (No-STD)";
         let engine_w = (engine_str.len() * 8) as i32;
         canvas.draw_string(cx + cw - engine_w - 10, sb_bar_y + 5, engine_str, 0x0064748B);
     }

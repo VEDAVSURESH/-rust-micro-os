@@ -205,6 +205,12 @@ impl KeyboardDecoder {
             0x43 => result = Some('\u{F9}'),
             0x44 => result = Some('\u{FA}'),
 
+            // Arrow keys (Extended navigation)
+            0x48 => result = Some('\u{2191}'), // Up arrow ↑
+            0x50 => result = Some('\u{2193}'), // Down arrow ↓
+            0x4B => result = Some('\u{2190}'), // Left arrow ←
+            0x4D => result = Some('\u{2192}'), // Right arrow →
+
             _ => {}
         }
 

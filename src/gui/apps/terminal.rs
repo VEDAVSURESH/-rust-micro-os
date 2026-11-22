@@ -27,7 +27,7 @@ impl TerminalApp {
             cursor_tick: 0,
             pending_launch: None,
         };
-        app.history.push(String::from("JainOS Interactive Shell v0.3.3 (GUI Mode)"));
+        app.history.push(String::from("JainOS Interactive Shell v0.3.4 (GUI Mode)"));
         app.history.push(String::from("Type 'help' for commands, or 'whoami' for user identity."));
         app.history.push(String::new());
         app

@@ -34,7 +34,7 @@ bootloader::entry_point!(kernel_main);
 fn kernel_main(boot_info: &'static bootloader::BootInfo) -> ! {
     // 1. Initial banner on serial and VGA
     serial_println!("========================================");
-    serial_println!("      JainOS Kernel v0.3.3              ");
+    serial_println!("      JainOS Kernel v0.3.4              ");
     serial_println!("  A Rust-Based Educational Micro-OS     ");
     serial_println!("========================================");
     serial_println!("[SERIAL] COM1 UART 16550 initialized at 115,200 baud.");

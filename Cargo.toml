@@ -1,6 +1,6 @@
 [package]
 name = "rust-micro-os"
-version = "0.3.3"
+version = "0.3.4"
 edition = "2021"
 authors = ["Vedav"]
 description = "JainOS — A Rust-Based Educational Operating System"

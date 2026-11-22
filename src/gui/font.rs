@@ -6,8 +6,11 @@
 pub const FONT_WIDTH: usize = 8;
 pub const FONT_HEIGHT: usize = 16;
 
-/// Returns the 16-byte glyph bitmap for a given ASCII character.
+/// Returns the 16-byte glyph bitmap for a given ASCII or supported character.
 pub fn get_glyph(c: char) -> &'static [u8; 16] {
+    if c == '•' || c == '\u{2022}' || c == '\u{25CF}' {
+        return &GLYPH_BULLET;
+    }
     let idx = c as usize;
     if (32..=126).contains(&idx) {
         &FONT_DATA[idx - 32]
@@ -19,6 +22,13 @@ pub fn get_glyph(c: char) -> &'static [u8; 16] {
 static GLYPH_UNKNOWN: [u8; 16] = [
     0x00, 0x00, 0x7E, 0x42, 0x5A, 0x5A, 0x42, 0x7E,
     0x42, 0x5A, 0x5A, 0x42, 0x7E, 0x00, 0x00, 0x00,
+];
+
+/// Smooth centered circular bullet glyph (•) for password masking.
+static GLYPH_BULLET: [u8; 16] = [
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x18, 0x3C, 0x3C, 0x18,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
 ];
 
 // Complete 8x16 font table for ASCII 32..126

@@ -1,4 +1,4 @@
-//! JainOS Native Graphical Desktop Environment & Window Manager (v0.3.3).
+//! JainOS Native Graphical Desktop Environment & Window Manager (v0.3.4).
 //!
 //! Features:
 //! - Full double-buffered linear framebuffer composition (Bochs BGA True Color)
@@ -173,6 +173,13 @@ impl Desktop {
                 '\u{F8}' => self.open_app(AppKind::About),
                 '\u{F9}' => self.start_menu_open = !self.start_menu_open,
                 '\t' => {
+                    // If the active front window is Network, route Tab to toggle password field focus
+                    if let Some(top_win) = self.windows.last_mut() {
+                        if !top_win.win.is_minimized && top_win.kind == AppKind::Network {
+                            self.network.handle_char('\t');
+                            continue;
+                        }
+                    }
                     // Cycle window focus
                     if self.windows.len() > 1 {
                         let first = self.windows.remove(0);
