@@ -76,10 +76,40 @@ impl ChainedPics {
         io_wait();
 
         // Configure Interrupt Mask Registers:
-        // Mask 0xFE = 0b1111_1110 -> Unmask IRQ0 (Timer), keep IRQ1..7 masked for now.
-        outb(PIC1_DATA, 0xFE);
+        // Mask 0xFC = 0b1111_1100 -> Unmask IRQ0 (Timer) and IRQ1 (Keyboard), keep IRQ2..7 masked.
+        outb(PIC1_DATA, 0xFC);
         // Mask 0xFF = 0b1111_1111 -> All slave IRQs masked.
         outb(PIC2_DATA, 0xFF);
+    }
+
+    /// Unmasks a specific IRQ line (0..15).
+    pub unsafe fn unmask_irq(&mut self, irq: u8) {
+        if irq < 8 {
+            let port = PIC1_DATA;
+            let value = crate::serial::inb(port) & !(1 << irq);
+            outb(port, value);
+        } else if irq < 16 {
+            // Must also unmask cascade line IRQ 2 on master
+            let master_val = crate::serial::inb(PIC1_DATA) & !(1 << 2);
+            outb(PIC1_DATA, master_val);
+
+            let port = PIC2_DATA;
+            let value = crate::serial::inb(port) & !(1 << (irq - 8));
+            outb(port, value);
+        }
+    }
+
+    /// Masks a specific IRQ line (0..15).
+    pub unsafe fn mask_irq(&mut self, irq: u8) {
+        if irq < 8 {
+            let port = PIC1_DATA;
+            let value = crate::serial::inb(port) | (1 << irq);
+            outb(port, value);
+        } else if irq < 16 {
+            let port = PIC2_DATA;
+            let value = crate::serial::inb(port) | (1 << (irq - 8));
+            outb(port, value);
+        }
     }
 
     /// Acknowledges an interrupt by sending an End Of Interrupt (EOI) command to the PICs.

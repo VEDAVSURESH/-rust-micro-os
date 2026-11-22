@@ -41,6 +41,9 @@ pub fn init_idt() {
     // Hardware IRQ0: Timer Interrupt (Vector 32)
     idt[pic::PIC_1_OFFSET as usize].set_handler_fn(timer_interrupt_handler);
 
+    // Hardware IRQ1: Keyboard Interrupt (Vector 33)
+    idt[(pic::PIC_1_OFFSET + 1) as usize].set_handler_fn(keyboard_interrupt_handler);
+
     // Load IDT into CPU IDTR register
     idt.load();
 }
@@ -56,6 +59,15 @@ extern "x86-interrupt" fn timer_interrupt_handler(_stack_frame: InterruptStackFr
 
     unsafe {
         pic::PICS.lock().notify_end_of_interrupt(pic::PIC_1_OFFSET);
+    }
+}
+
+/// Handler for Hardware Keyboard Interrupt (IRQ 1 / Vector 33).
+extern "x86-interrupt" fn keyboard_interrupt_handler(_stack_frame: InterruptStackFrame) {
+    crate::keyboard::handle_interrupt();
+
+    unsafe {
+        pic::PICS.lock().notify_end_of_interrupt(pic::PIC_1_OFFSET + 1);
     }
 }
 

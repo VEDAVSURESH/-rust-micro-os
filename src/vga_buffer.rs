@@ -87,10 +87,31 @@ impl Writer {
         self.color_code = ColorCode::new(foreground, background);
     }
 
-    /// Writes a single byte to the screen. Handles newlines and line wrapping.
+    /// Deletes the last character written, moving the cursor back one column.
+    pub fn backspace(&mut self) {
+        if self.column_position > 0 {
+            self.column_position -= 1;
+            let row = BUFFER_HEIGHT - 1;
+            let col = self.column_position;
+            let color_code = self.color_code;
+            unsafe {
+                let char_ptr = &mut (*self.buffer).chars[row][col] as *mut ScreenChar;
+                core::ptr::write_volatile(
+                    char_ptr,
+                    ScreenChar {
+                        ascii_character: b' ',
+                        color_code,
+                    },
+                );
+            }
+        }
+    }
+
+    /// Writes a single byte to the screen. Handles newlines, backspaces, and line wrapping.
     pub fn write_byte(&mut self, byte: u8) {
         match byte {
             b'\n' => self.new_line(),
+            0x08 => self.backspace(),
             byte => {
                 if self.column_position >= BUFFER_WIDTH {
                     self.new_line();
@@ -119,12 +140,12 @@ impl Writer {
     }
 
     /// Writes an ASCII/UTF-8 string slice to the buffer.
-    /// Unprintable characters outside ASCII range 0x20..=0x7e (except newline) are replaced by 0xfe.
+    /// Unprintable characters outside ASCII range 0x20..=0x7e (except newline & backspace) are replaced by 0xfe.
     pub fn write_string(&mut self, s: &str) {
         for byte in s.bytes() {
             match byte {
-                // Printable ASCII or newline
-                0x20..=0x7e | b'\n' => self.write_byte(byte),
+                // Printable ASCII, newline, or backspace
+                0x20..=0x7e | b'\n' | 0x08 => self.write_byte(byte),
                 // Fallback for non-ASCII or unprintable characters
                 _ => self.write_byte(0xfe),
             }

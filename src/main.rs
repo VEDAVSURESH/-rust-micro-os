@@ -10,6 +10,7 @@ use core::panic::PanicInfo;
 pub mod allocator;
 pub mod gdt;
 pub mod interrupts;
+pub mod keyboard;
 pub mod logger;
 pub mod memory;
 pub mod pic;
