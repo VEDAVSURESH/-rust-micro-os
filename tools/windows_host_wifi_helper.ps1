@@ -91,7 +91,14 @@ try {
                 $trimmed = $line.Trim()
                 if ($trimmed -match "^Description\s*:\s*(.+)") { $adapter = $matches[1].Trim() }
                 if ($trimmed -match "^State\s*:\s*(.+)") {
-                    if ($matches[1] -match "connected") { $state = "CONNECTED" }
+                    $stVal = $matches[1].Trim().ToLower()
+                    if ($stVal -eq "connected") {
+                        $state = "CONNECTED"
+                    } else {
+                        $state = "DISCONNECTED"
+                        $connectedSsid = "None"
+                        $signal = "0%"
+                    }
                 }
                 if ($trimmed -match "^SSID\s*:\s*(.+)" -and -not ($trimmed -match "^SSID 1")) {
                     $connectedSsid = $matches[1].Trim()

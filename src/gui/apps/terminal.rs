@@ -1,4 +1,4 @@
-//! Interactive Graphical Terminal Application for JainOS (v0.3.2).
+//! Interactive Graphical Terminal Application for JainOS (v0.3.3).
 //!
 //! Provides a full-featured terminal emulator inside a GUI window, executing
 //! kernel commands (whoami, ping, curl, mem, tasks, date, pci, ifconfig, etc.).
@@ -27,7 +27,7 @@ impl TerminalApp {
             cursor_tick: 0,
             pending_launch: None,
         };
-        app.history.push(String::from("JainOS Interactive Shell v0.3.2 (GUI Mode)"));
+        app.history.push(String::from("JainOS Interactive Shell v0.3.3 (GUI Mode)"));
         app.history.push(String::from("Type 'help' for commands, or 'whoami' for user identity."));
         app.history.push(String::new());
         app
@@ -105,10 +105,10 @@ impl TerminalApp {
                 self.history.clear();
             }
             "uname" => {
-                self.push_out(String::from("JainOS 0.3.2 x86_64 bare-metal microkernel"));
+                self.push_out(String::from("JainOS 0.3.3 x86_64 bare-metal microkernel"));
             }
             "version" => {
-                self.push_out(String::from("JainOS v0.3.2 (Phase 2 - Native Graphical Edition)"));
+                self.push_out(String::from("JainOS v0.3.3 (Phase 2 - Native Graphical Edition)"));
                 self.push_out(String::from("Developer: Vedav Suresh (USN: 25BTRCL280)"));
                 self.push_out(String::from("College OS Project: All requirements verified"));
             }

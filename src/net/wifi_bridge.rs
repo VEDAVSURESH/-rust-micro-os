@@ -34,8 +34,8 @@ impl HostWifiTelemetry {
     pub fn unavailable() -> Self {
         Self {
             is_available: false,
-            state: String::from("DISCONNECTED"),
-            connected_ssid: String::from("Host Helper Offline"),
+            state: String::from("HOST BRIDGE UNAVAILABLE"),
+            connected_ssid: String::from("None"),
             signal: String::from("0%"),
             adapter: String::from("Windows WLAN Service (10.0.2.2:19820)"),
             radio: String::from("N/A"),
@@ -66,12 +66,12 @@ pub fn query_host_wifi() -> HostWifiTelemetry {
 
             let mut info = HostWifiTelemetry {
                 is_available: true,
-                state: String::from("CONNECTED"),
-                connected_ssid: String::from("Unknown"),
-                signal: String::from("100%"),
+                state: String::from("UNKNOWN"),
+                connected_ssid: String::from("None"),
+                signal: String::from("0%"),
                 adapter: String::from("Windows Wireless LAN"),
                 radio: String::from("802.11ax"),
-                auth: String::from("WPA2-Personal"),
+                auth: String::from("None"),
                 available_networks: Vec::new(),
             };
 
@@ -140,6 +140,11 @@ pub fn query_host_wifi() -> HostWifiTelemetry {
                         }
                     }
                 }
+            }
+
+            // Validate connection state consistency
+            if info.state == "CONNECTED" && (info.connected_ssid == "None" || info.connected_ssid.is_empty()) {
+                info.state = String::from("DISCONNECTED");
             }
 
             info

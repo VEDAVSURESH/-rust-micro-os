@@ -39,7 +39,14 @@ def get_wifi_info():
                 iface["adapter"] = line.split(":", 1)[1].strip()
             elif line.startswith("State") and ":" in line:
                 val = line.split(":", 1)[1].strip().lower()
-                iface["state"] = "CONNECTED" if "connected" in val else "DISCONNECTED"
+                if val == "connected":
+                    iface["state"] = "CONNECTED"
+                elif val == "disconnected":
+                    iface["state"] = "DISCONNECTED"
+                    iface["connected_ssid"] = "None"
+                    iface["signal"] = "0%"
+                else:
+                    iface["state"] = val.upper()
             elif line.startswith("SSID") and ":" in line and not line.startswith("SSID 1"):
                 parts = line.split(":", 1)
                 if parts[0].strip() == "SSID":
