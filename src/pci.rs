@@ -227,3 +227,66 @@ pub fn print_pci_devices() {
         );
     }
 }
+
+/// Reads a specific BAR (0..5) from PCI configuration space.
+pub fn pci_read_bar(bus: u8, slot: u8, func: u8, bar_idx: u8) -> u32 {
+    if bar_idx > 5 {
+        return 0;
+    }
+    pci_read_32(bus, slot, func, 0x10 + bar_idx * 4)
+}
+
+/// Finds the display adapter PCI device (VGA / Display Controller).
+pub fn find_display_device() -> Option<PciDevice> {
+    let devs = PCI_DEVICES.lock();
+    for dev in devs.iter() {
+        if dev.class_id == 0x03 || (dev.vendor_id == 0x1234 && dev.device_id == 0x1111) || dev.vendor_id == 0x80EE {
+            return Some(*dev);
+        }
+    }
+    None
+}
+
+/// Returns the physical address of the linear framebuffer.
+/// Inspects QEMU Standard VGA, VirtualBox Guest Video Adapter, and falls back to standard BGA 0xE000_0000.
+pub fn get_framebuffer_phys_addr() -> u64 {
+    let devs = PCI_DEVICES.lock();
+    for dev in devs.iter() {
+        // 1. QEMU Standard VGA (0x1234:0x1111)
+        if dev.vendor_id == 0x1234 && dev.device_id == 0x1111 {
+            let bar0 = dev.bar0 & 0xFFFF_FFF0;
+            if bar0 != 0 {
+                crate::serial_println!("[PCI] Detected QEMU VGA LFB BAR0 at {:#010x}", bar0);
+                return bar0 as u64;
+            }
+        }
+
+        // 2. VirtualBox Video / Integration devices (0x80EE:0xCAFE or 0x80EE:0xBEEF)
+        if dev.vendor_id == 0x80EE {
+            // VirtualBox Video Adapter uses BAR1 for video RAM or BAR0
+            let bar1 = pci_read_bar(dev.bus, dev.slot, dev.func, 1) & 0xFFFF_FFF0;
+            if bar1 >= 0x8000_0000 {
+                crate::serial_println!("[PCI] Detected VirtualBox Video LFB BAR1 at {:#010x}", bar1);
+                return bar1 as u64;
+            }
+            let bar0 = dev.bar0 & 0xFFFF_FFF0;
+            if bar0 >= 0x8000_0000 {
+                crate::serial_println!("[PCI] Detected VirtualBox Video LFB BAR0 at {:#010x}", bar0);
+                return bar0 as u64;
+            }
+        }
+
+        // 3. Generic VGA Display Controller (Class 0x03)
+        if dev.class_id == 0x03 {
+            let bar0 = dev.bar0 & 0xFFFF_FFF0;
+            if bar0 >= 0x8000_0000 {
+                crate::serial_println!("[PCI] Detected Class 0x03 Display LFB BAR0 at {:#010x}", bar0);
+                return bar0 as u64;
+            }
+        }
+    }
+
+    // 4. Default fallback physical address for Bochs / VirtualBox VBE LFB
+    crate::serial_println!("[PCI] Display device BAR unassigned, using default BGA LFB base: 0xE000_0000");
+    0xE000_0000
+}

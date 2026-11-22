@@ -44,6 +44,9 @@ pub fn init_idt() {
     // Hardware IRQ1: Keyboard Interrupt (Vector 33)
     idt[(pic::PIC_1_OFFSET + 1) as usize].set_handler_fn(keyboard_interrupt_handler);
 
+    // Hardware IRQ12: PS/2 Mouse Interrupt (Vector 44)
+    idt[(pic::PIC_2_OFFSET + 4) as usize].set_handler_fn(mouse_interrupt_handler);
+
     // Load IDT into CPU IDTR register
     idt.load();
 }
@@ -68,6 +71,15 @@ extern "x86-interrupt" fn keyboard_interrupt_handler(_stack_frame: InterruptStac
 
     unsafe {
         pic::PICS.lock().notify_end_of_interrupt(pic::PIC_1_OFFSET + 1);
+    }
+}
+
+/// Handler for Hardware PS/2 Mouse Interrupt (IRQ 12 / Vector 44).
+extern "x86-interrupt" fn mouse_interrupt_handler(_stack_frame: InterruptStackFrame) {
+    crate::mouse::handle_interrupt();
+
+    unsafe {
+        pic::PICS.lock().notify_end_of_interrupt(pic::PIC_2_OFFSET + 4);
     }
 }
 

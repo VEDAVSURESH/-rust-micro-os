@@ -1257,7 +1257,12 @@ pub fn test_dynamic_task_creation() {
     log_info!("  [Test 5d] Read-only state() getter verified.");
 
     // 6. Heap Allocation Failure & Rollback Test
-    // Spawns tasks until heap is saturated and verifies OutOfMemory is handled cleanly
+    // Saturates heap so that dynamic task stack allocation hits OutOfMemory
+    let free_bytes = crate::allocator::ALLOCATOR.stats().total_free_bytes;
+    let filler_size = free_bytes.saturating_sub(24 * 1024);
+    let filler_layout = core::alloc::Layout::from_size_align(filler_size, 8).ok();
+    let filler_ptr = filler_layout.map(|l| unsafe { alloc::alloc::alloc(l) });
+
     let mut oom_spawned = Vec::new();
     let mut oom_detected = false;
     for _ in 0..10 {
@@ -1270,7 +1275,7 @@ pub fn test_dynamic_task_creation() {
             Err(e) => panic!("Unexpected spawn error: {:?}", e),
         }
     }
-    assert!(oom_detected, "Must detect OutOfMemory on small 100 KiB heap");
+    assert!(oom_detected, "Must detect OutOfMemory on saturated heap");
     // Verify that after OOM, scheduler state is not corrupted and reserved slot was released
     {
         let sched = SCHEDULER.lock();
@@ -1286,6 +1291,13 @@ pub fn test_dynamic_task_creation() {
         let mut sched = SCHEDULER.lock();
         for id in oom_spawned {
             let _ = sched.remove_task(id);
+        }
+    }
+    if let (Some(ptr), Some(layout)) = (filler_ptr, filler_layout) {
+        if !ptr.is_null() {
+            unsafe {
+                alloc::alloc::dealloc(ptr, layout);
+            }
         }
     }
     log_info!("  [Test 6] Heap allocation failure (OutOfMemory) and reservation rollback verified.");

@@ -8,13 +8,16 @@ extern crate alloc;
 use core::panic::PanicInfo;
 
 pub mod allocator;
+pub mod bga;
 pub mod cmos;
 pub mod e1000;
 pub mod gdt;
+pub mod gui;
 pub mod interrupts;
 pub mod keyboard;
 pub mod logger;
 pub mod memory;
+pub mod mouse;
 pub mod net;
 pub mod pci;
 pub mod pic;
@@ -58,8 +61,9 @@ fn kernel_main(boot_info: &'static bootloader::BootInfo) -> ! {
     // 5. Initialize 8254 PIT (Channel 0 at 100 Hz, ~10ms per tick)
     timer::init();
 
-    // 6. Initialize 8042 PS/2 Keyboard Controller
+    // 6. Initialize 8042 PS/2 Keyboard Controller & Auxiliary PS/2 Mouse
     keyboard::init();
+    mouse::init();
 
     // 7. Safely enable hardware CPU interrupts (sti)
     x86_64::instructions::interrupts::enable();
@@ -237,10 +241,25 @@ fn kernel_main(boot_info: &'static bootloader::BootInfo) -> ! {
         net::init();
     }
 
-    // 18. Launch Interactive JainOS Terminal
+    // 18. Launch Graphical Desktop or Interactive JainOS Terminal
     logger::set_vga_logging(false);
     vga_buffer::WRITER.lock().clear_screen();
-    task::spawn("Terminal", terminal::terminal_task).expect("Failed to spawn Terminal task");
+
+    if bga::is_available() {
+        match gui::init_desktop() {
+            Ok(()) => {
+                task::spawn("Desktop GUI", gui::desktop_task).expect("Failed to spawn Desktop GUI task");
+                log_info!("JainOS Native Graphical Desktop launched successfully.");
+            }
+            Err(e) => {
+                log_warn!("GUI initialization failed ({}), falling back to text terminal.", e);
+                task::spawn("Terminal", terminal::terminal_task).expect("Failed to spawn Terminal task");
+            }
+        }
+    } else {
+        log_warn!("BGA graphics hardware unavailable, falling back to text terminal.");
+        task::spawn("Terminal", terminal::terminal_task).expect("Failed to spawn Terminal task");
+    }
 
     // 19. Normal kernel execution loop
     // Prints timer milestone updates safely from outside the interrupt handler to serial.

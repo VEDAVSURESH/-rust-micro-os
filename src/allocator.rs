@@ -20,8 +20,8 @@ use x86_64::VirtAddr;
 /// Candidate virtual address where the kernel heap begins.
 pub const HEAP_START: usize = 0x_4444_4444_0000;
 
-/// Default initial kernel heap size (100 KiB, 25 x 4 KiB pages).
-pub const HEAP_SIZE: usize = 100 * 1024;
+/// Kernel heap size (16 MiB, 4096 x 4 KiB pages) for native graphical desktop & buffers.
+pub const HEAP_SIZE: usize = 16 * 1024 * 1024;
 
 /// Align the given address upwards to the nearest multiple of `align` using checked arithmetic.
 ///
@@ -838,7 +838,7 @@ pub fn test_heap_allocations() {
 
     // 14. Test allocation failure handling (requesting size exceeding entire heap)
     {
-        let impossible_layout = Layout::from_size_align(10 * 1024 * 1024, 8).unwrap();
+        let impossible_layout = Layout::from_size_align(32 * 1024 * 1024, 8).unwrap();
         let initial_failures = ALLOCATOR.stats().alloc_failures;
 
         unsafe {

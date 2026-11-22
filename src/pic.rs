@@ -76,10 +76,10 @@ impl ChainedPics {
         io_wait();
 
         // Configure Interrupt Mask Registers:
-        // Mask 0xFC = 0b1111_1100 -> Unmask IRQ0 (Timer) and IRQ1 (Keyboard), keep IRQ2..7 masked.
-        outb(PIC1_DATA, 0xFC);
-        // Mask 0xFF = 0b1111_1111 -> All slave IRQs masked.
-        outb(PIC2_DATA, 0xFF);
+        // Mask 0xF8 = 0b1111_1000 -> Unmask IRQ0 (Timer), IRQ1 (Keyboard), and IRQ2 (Slave PIC cascade)
+        outb(PIC1_DATA, 0xF8);
+        // Mask 0xEF = 0b1110_1111 -> Unmask IRQ12 (PS/2 Mouse), keep other slave IRQs masked.
+        outb(PIC2_DATA, 0xEF);
     }
 
     /// Unmasks a specific IRQ line (0..15).
