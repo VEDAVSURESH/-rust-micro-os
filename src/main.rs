@@ -9,6 +9,7 @@ use core::panic::PanicInfo;
 
 pub mod allocator;
 pub mod cmos;
+pub mod e1000;
 pub mod gdt;
 pub mod interrupts;
 pub mod keyboard;
@@ -142,6 +143,7 @@ fn kernel_main(boot_info: &'static bootloader::BootInfo) -> ! {
 
     // 10. Milestone 5 (Stage 2): Paging & Kernel Heap Initialization
     let raw_offset = boot_info.physical_memory_offset;
+    memory::set_phys_mem_offset(raw_offset);
     if raw_offset == 0 || raw_offset == u64::MAX {
         log_error!(
             "CRITICAL: Invalid physical memory offset from bootloader: {:#018x}",
@@ -204,6 +206,7 @@ fn kernel_main(boot_info: &'static bootloader::BootInfo) -> ! {
         post_stats.total_allocated_bytes, 0,
         "Memory leak detected: active allocations remain after test suite"
     );
+    memory::set_frame_allocator(frame_allocator);
 
     // 11. Milestone 6 (Stage 1): Cooperative Context Switching Test
     task::test_cooperative_context_switching();
@@ -221,7 +224,10 @@ fn kernel_main(boot_info: &'static bootloader::BootInfo) -> ! {
     pci::enumerate_pci();
     log_info!("PCI bus enumeration complete: {} hardware devices detected.", pci::PCI_DEVICES.lock().len());
 
-    // 16. Launch Interactive JainOS Terminal
+    // 16. Intel e1000 Gigabit Ethernet Initialization
+    e1000::init();
+
+    // 17. Launch Interactive JainOS Terminal
     logger::set_vga_logging(false);
     vga_buffer::WRITER.lock().clear_screen();
     task::spawn("Terminal", terminal::terminal_task).expect("Failed to spawn Terminal task");

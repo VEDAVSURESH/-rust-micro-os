@@ -9,7 +9,7 @@
 use bootloader::bootinfo::{MemoryMap, MemoryRegion, MemoryRegionType};
 use crate::sync::Spinlock;
 use x86_64::registers::control::Cr3;
-use x86_64::structures::paging::{FrameAllocator, OffsetPageTable, PageTable, PhysFrame, Size4KiB};
+use x86_64::structures::paging::{FrameAllocator, Mapper, OffsetPageTable, Page, PageTable, PageTableFlags, PhysFrame, Size4KiB, Translate};
 use x86_64::{PhysAddr, VirtAddr};
 
 /// Initializes an `OffsetPageTable` pointing to the active Level 4 Page Table.
@@ -254,6 +254,71 @@ impl BootInfoFrameAllocator {
             }
         }
     }
+}
+
+unsafe impl Send for BootInfoFrameAllocator {}
+unsafe impl Sync for BootInfoFrameAllocator {}
+
+/// Global frame allocator accessible across kernel subsystems.
+pub static FRAME_ALLOCATOR: Spinlock<Option<BootInfoFrameAllocator>> = Spinlock::new(None);
+
+/// Global physical memory offset provided by the bootloader.
+pub static PHYS_MEM_OFFSET: Spinlock<u64> = Spinlock::new(0);
+
+/// Stores the global frame allocator.
+pub fn set_frame_allocator(allocator: BootInfoFrameAllocator) {
+    *FRAME_ALLOCATOR.lock() = Some(allocator);
+}
+
+/// Stores the physical memory offset for address translations.
+pub fn set_phys_mem_offset(offset: u64) {
+    *PHYS_MEM_OFFSET.lock() = offset;
+}
+
+/// Allocates a single 4 KiB physical frame from the global frame allocator.
+pub fn allocate_frame() -> Option<PhysFrame<Size4KiB>> {
+    FRAME_ALLOCATOR.lock().as_mut()?.allocate_frame()
+}
+
+/// Translates a physical memory address to its canonical virtual address.
+pub fn phys_to_virt(phys: u64) -> u64 {
+    *PHYS_MEM_OFFSET.lock() + phys
+}
+
+/// Maps a physical MMIO memory address range into the active page table.
+pub fn map_mmio_range(phys_addr: u64, size: usize) -> Result<VirtAddr, ()> {
+    let phys_offset = *PHYS_MEM_OFFSET.lock();
+    let virt_start = VirtAddr::new(phys_offset + phys_addr);
+    let mut mapper = unsafe { init_offset_page_table(VirtAddr::new(phys_offset)) };
+
+    // If already mapped by bootloader (e.g. via 2 MiB huge pages), reuse mapping
+    if mapper.translate_addr(virt_start).is_some() {
+        return Ok(virt_start);
+    }
+
+    let start_page = Page::<Size4KiB>::containing_address(virt_start);
+    let end_page = Page::<Size4KiB>::containing_address(virt_start + (size as u64) - 1u64);
+
+    for page in Page::range_inclusive(start_page, end_page) {
+        if mapper.translate_addr(page.start_address()).is_none() {
+            let page_phys = PhysAddr::new(page.start_address().as_u64() - phys_offset);
+            let frame = PhysFrame::containing_address(page_phys);
+            let flags = PageTableFlags::PRESENT
+                | PageTableFlags::WRITABLE
+                | PageTableFlags::NO_CACHE
+                | PageTableFlags::WRITE_THROUGH;
+
+            let mut alloc_lock = FRAME_ALLOCATOR.lock();
+            let allocator = alloc_lock.as_mut().ok_or(())?;
+            unsafe {
+                match mapper.map_to(page, frame, flags, allocator) {
+                    Ok(flush) => flush.flush(),
+                    Err(_) => return Err(()),
+                }
+            }
+        }
+    }
+    Ok(virt_start)
 }
 
 unsafe impl FrameAllocator<Size4KiB> for BootInfoFrameAllocator {
