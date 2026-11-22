@@ -203,7 +203,16 @@ fn kernel_main(boot_info: &'static bootloader::BootInfo) -> ! {
     // 11. Milestone 6 (Stage 1): Cooperative Context Switching Test
     task::test_cooperative_context_switching();
 
-    // 12. Normal kernel execution loop
+    // 12. Milestone 6 (Stage 2B): Scheduler Structure & Ready Queue Test
+    task::test_scheduler_structure();
+
+    // 13. Milestone 6 (Stage 2C): Dynamic Task Creation Test
+    task::test_dynamic_task_creation();
+
+    // 14. Milestone 6 (Stage 2D): Scheduler-Driven Context Switching Demonstration
+    task::test_scheduler_context_switching();
+
+    // 15. Normal kernel execution loop
     // Prints timer milestone updates safely from outside the interrupt handler.
     let mut last_reported_sec = 0;
 
@@ -215,6 +224,9 @@ fn kernel_main(boot_info: &'static bootloader::BootInfo) -> ! {
             last_reported_sec = seconds;
             log_info!("Timer heartbeat: {}s elapsed (total ticks: {})", seconds, ticks);
         }
+
+        // Cooperatively yield CPU to ready background tasks
+        task::yield_now();
 
         // Put the CPU to sleep until the next hardware interrupt arrives.
         // Saves host CPU cycles and demonstrates real interrupt wakeups.

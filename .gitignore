@@ -1,2 +1,23 @@
+# Rust build artifacts
 /target
 Cargo.lock
+
+# MicroOS ISO and rootfs build artifacts
+/build
+*.iso
+*.squashfs
+*.bin
+
+# Temporary build directories
+/var/tmp/micro-os-build
+chroot/
+iso/
+
+# Compiled C binaries
+micro-os/research-lab/research-lab
+
+# OS / Editor temporary files
+.DS_Store
+Thumbs.db
+*.swp
+*~
