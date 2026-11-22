@@ -15,6 +15,7 @@ pub mod interrupts;
 pub mod keyboard;
 pub mod logger;
 pub mod memory;
+pub mod net;
 pub mod pci;
 pub mod pic;
 pub mod serial;
@@ -225,14 +226,19 @@ fn kernel_main(boot_info: &'static bootloader::BootInfo) -> ! {
     log_info!("PCI bus enumeration complete: {} hardware devices detected.", pci::PCI_DEVICES.lock().len());
 
     // 16. Intel e1000 Gigabit Ethernet Initialization
-    e1000::init();
+    let has_net = e1000::init();
 
-    // 17. Launch Interactive JainOS Terminal
+    // 17. Native Internet & DHCP Subsystem
+    if has_net {
+        net::init();
+    }
+
+    // 18. Launch Interactive JainOS Terminal
     logger::set_vga_logging(false);
     vga_buffer::WRITER.lock().clear_screen();
     task::spawn("Terminal", terminal::terminal_task).expect("Failed to spawn Terminal task");
 
-    // 16. Normal kernel execution loop
+    // 19. Normal kernel execution loop
     // Prints timer milestone updates safely from outside the interrupt handler to serial.
     let mut last_reported_sec = 0;
 
@@ -243,6 +249,11 @@ fn kernel_main(boot_info: &'static bootloader::BootInfo) -> ! {
         if seconds > last_reported_sec {
             last_reported_sec = seconds;
             log_info!("Timer heartbeat: {}s elapsed (total ticks: {})", seconds, ticks);
+        }
+
+        // Process incoming network packets
+        if has_net {
+            net::poll();
         }
 
         // Cooperatively yield CPU to ready background tasks (Terminal, Net, etc.)

@@ -232,17 +232,17 @@ fn cmd_pci() {
 
 /// Handler for `ifconfig` command.
 fn cmd_ifconfig() {
-    term_println!("Network interface initializing...");
+    crate::net::print_ifconfig();
 }
 
 /// Handler for `ping` command.
-fn cmd_ping(_target: &str) {
-    term_println!("Network ping subsystem initializing...");
+fn cmd_ping(target: &str) {
+    crate::net::ping(target);
 }
 
 /// Handler for `curl` command.
-fn cmd_curl(_url: &str) {
-    term_println!("HTTP curl subsystem initializing...");
+fn cmd_curl(url: &str) {
+    crate::net::curl(url);
 }
 
 /// Interactive terminal loop task.
@@ -253,7 +253,17 @@ pub extern "C" fn terminal_task() {
     let mut line = String::new();
 
     loop {
-        if let Some(c) = keyboard::read_char() {
+        let input_char = keyboard::read_char().or_else(|| {
+            crate::serial::SERIAL1.lock().receive_byte().map(|b| {
+                match b {
+                    b'\r' => '\n',
+                    0x7F => '\x08',
+                    other => other as char,
+                }
+            })
+        });
+
+        if let Some(c) = input_char {
             match c {
                 '\n' => {
                     term_println!();
@@ -284,6 +294,7 @@ pub extern "C" fn terminal_task() {
             }
         }
 
+        crate::net::poll();
         crate::task::yield_now();
         x86_64::instructions::hlt();
     }

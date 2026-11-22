@@ -236,7 +236,7 @@ impl E1000Device {
             }
 
             // Enable Receiver: EN(1), SBP(2), UPE(3), MPE(4), SECRC(26), BSIZE=2048(0)
-            let rctl = (1 << 1) | (1 << 2) | (1 << 3) | (1 << 4) | (1 << 26);
+            let rctl = (1 << 1) | (1 << 2) | (1 << 3) | (1 << 4) | (1 << 15) | (1 << 26);
             dev.write_reg(REG_RCTL, rctl);
 
             // 5. Initialize Transmit DMA Ring
@@ -334,7 +334,7 @@ impl E1000Device {
 
     /// Receives a raw Ethernet packet from the DMA ring if available.
     pub fn receive_packet(&mut self) -> Option<Vec<u8>> {
-        let cur = (self.rx_cur + 1) % NUM_RX_DESCRIPTORS;
+        let cur = self.rx_cur;
         let desc = unsafe { &mut *self.rx_descs.add(cur) };
 
         // Check if Descriptor Done (DD: bit 0) is set by hardware
@@ -350,9 +350,9 @@ impl E1000Device {
             core::ptr::copy_nonoverlapping(buf_virt as *const u8, packet.as_mut_ptr(), length);
         }
 
-        // Clear descriptor status and advance tail
+        // Clear descriptor status and advance tail to give buffer back to hardware
         desc.status = 0;
-        self.rx_cur = cur;
+        self.rx_cur = (cur + 1) % NUM_RX_DESCRIPTORS;
         unsafe {
             self.write_reg(REG_RDT, cur as u32);
         }
