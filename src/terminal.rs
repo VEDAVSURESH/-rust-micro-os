@@ -7,7 +7,7 @@
 use alloc::string::String;
 use alloc::vec::Vec;
 use crate::keyboard;
-use crate::{serial_print, serial_println, vga_buffer};
+use crate::{serial_print, vga_buffer};
 
 macro_rules! term_print {
     ($($arg:tt)*) => ({
@@ -227,7 +227,7 @@ fn cmd_tasks() {
 
 /// Handler for `pci` command.
 fn cmd_pci() {
-    term_println!("PCI Bus enumeration initializing...");
+    crate::pci::print_pci_devices();
 }
 
 /// Handler for `ifconfig` command.

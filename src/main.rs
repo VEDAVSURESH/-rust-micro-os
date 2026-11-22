@@ -14,6 +14,7 @@ pub mod interrupts;
 pub mod keyboard;
 pub mod logger;
 pub mod memory;
+pub mod pci;
 pub mod pic;
 pub mod serial;
 pub mod sync;
@@ -216,7 +217,11 @@ fn kernel_main(boot_info: &'static bootloader::BootInfo) -> ! {
     // 14. Milestone 6 (Stage 2D): Scheduler-Driven Context Switching Demonstration
     task::test_scheduler_context_switching();
 
-    // 15. Launch Interactive JainOS Terminal
+    // 15. PCI Hardware Bus Enumeration
+    pci::enumerate_pci();
+    log_info!("PCI bus enumeration complete: {} hardware devices detected.", pci::PCI_DEVICES.lock().len());
+
+    // 16. Launch Interactive JainOS Terminal
     logger::set_vga_logging(false);
     vga_buffer::WRITER.lock().clear_screen();
     task::spawn("Terminal", terminal::terminal_task).expect("Failed to spawn Terminal task");
