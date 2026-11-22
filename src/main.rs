@@ -8,6 +8,7 @@ extern crate alloc;
 use core::panic::PanicInfo;
 
 pub mod allocator;
+pub mod cmos;
 pub mod gdt;
 pub mod interrupts;
 pub mod keyboard;
@@ -17,6 +18,7 @@ pub mod pic;
 pub mod serial;
 pub mod sync;
 pub mod task;
+pub mod terminal;
 pub mod timer;
 pub mod vga_buffer;
 
@@ -83,6 +85,7 @@ fn kernel_main(boot_info: &'static bootloader::BootInfo) -> ! {
             panic!("Memory map analysis arithmetic overflow");
         }
     };
+    memory::set_physical_memory_info(mem_info);
     log_info!(
         "Memory map: {} total regions ({} usable).",
         mem_info.total_regions,
@@ -213,8 +216,13 @@ fn kernel_main(boot_info: &'static bootloader::BootInfo) -> ! {
     // 14. Milestone 6 (Stage 2D): Scheduler-Driven Context Switching Demonstration
     task::test_scheduler_context_switching();
 
-    // 15. Normal kernel execution loop
-    // Prints timer milestone updates safely from outside the interrupt handler.
+    // 15. Launch Interactive JainOS Terminal
+    logger::set_vga_logging(false);
+    vga_buffer::WRITER.lock().clear_screen();
+    task::spawn("Terminal", terminal::terminal_task).expect("Failed to spawn Terminal task");
+
+    // 16. Normal kernel execution loop
+    // Prints timer milestone updates safely from outside the interrupt handler to serial.
     let mut last_reported_sec = 0;
 
     loop {
@@ -226,7 +234,7 @@ fn kernel_main(boot_info: &'static bootloader::BootInfo) -> ! {
             log_info!("Timer heartbeat: {}s elapsed (total ticks: {})", seconds, ticks);
         }
 
-        // Cooperatively yield CPU to ready background tasks
+        // Cooperatively yield CPU to ready background tasks (Terminal, Net, etc.)
         task::yield_now();
 
         // Put the CPU to sleep until the next hardware interrupt arrives.

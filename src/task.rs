@@ -583,6 +583,13 @@ impl Scheduler {
         id
     }
 
+    /// Iterates over all active tasks, invoking the closure on each TCB.
+    pub fn for_each_task<F: FnMut(&TaskControlBlock)>(&self, mut f: F) {
+        for slot in self.tasks.iter().flatten() {
+            f(slot);
+        }
+    }
+
     /// Returns the currently executing task ID, if any.
     #[inline(always)]
     pub fn current_task_id(&self) -> Option<TaskId> {

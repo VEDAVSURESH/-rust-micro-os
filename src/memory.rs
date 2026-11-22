@@ -7,6 +7,7 @@
 //! - Checked arithmetic for all memory statistics and frame indexing with documented overflow handling.
 
 use bootloader::bootinfo::{MemoryMap, MemoryRegion, MemoryRegionType};
+use crate::sync::Spinlock;
 use x86_64::registers::control::Cr3;
 use x86_64::structures::paging::{FrameAllocator, OffsetPageTable, PageTable, PhysFrame, Size4KiB};
 use x86_64::{PhysAddr, VirtAddr};
@@ -39,6 +40,19 @@ pub struct PhysicalMemoryInfo {
     pub total_usable_bytes: u64,
     /// Total count of completely enclosed 4 KiB frames across all usable regions.
     pub total_usable_frames: u64,
+}
+
+/// Global storage for boot-time analyzed physical memory statistics.
+pub static PHYSICAL_MEM_INFO: Spinlock<Option<PhysicalMemoryInfo>> = Spinlock::new(None);
+
+/// Stores physical memory statistics for runtime queries.
+pub fn set_physical_memory_info(info: PhysicalMemoryInfo) {
+    *PHYSICAL_MEM_INFO.lock() = Some(info);
+}
+
+/// Retrieves the recorded physical memory statistics.
+pub fn get_physical_memory_info() -> Option<PhysicalMemoryInfo> {
+    *PHYSICAL_MEM_INFO.lock()
 }
 
 /// Errors that can occur during memory map analysis or frame allocation.

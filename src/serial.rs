@@ -143,6 +143,23 @@ impl SerialPort {
         self.initialized = true;
     }
 
+    /// Checks if a byte has been received and is ready to read (LSR bit 0 is 1).
+    pub fn has_byte(&mut self) -> bool {
+        if !self.initialized {
+            self.init();
+        }
+        unsafe { (inb(self.port + 5) & 0x01) != 0 }
+    }
+
+    /// Reads a single byte from the receiver buffer register if available.
+    pub fn receive_byte(&mut self) -> Option<u8> {
+        if self.has_byte() {
+            unsafe { Some(inb(self.port)) }
+        } else {
+            None
+        }
+    }
+
     /// Sends a single raw byte through the serial line.
     /// Polls the Line Status Register (LSR, port + 5) until the transmitter holding register is empty.
     pub fn send_byte(&mut self, byte: u8) {

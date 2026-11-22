@@ -221,9 +221,21 @@ pub fn handle_interrupt() {
     }
 }
 
-/// Reads a character from the keyboard buffer if available. Non-blocking.
+/// Reads a character from the keyboard buffer if available, or serial console. Non-blocking.
 pub fn read_char() -> Option<char> {
-    KEYBOARD_BUFFER.lock().pop()
+    if let Some(c) = KEYBOARD_BUFFER.lock().pop() {
+        return Some(c);
+    }
+    // Also accept input from serial port (COM1) for headless terminal automation
+    if let Some(byte) = crate::serial::SERIAL1.lock().receive_byte() {
+        let c = match byte {
+            b'\r' => '\n',
+            0x7F | 0x08 => '\x08',
+            b => b as char,
+        };
+        return Some(c);
+    }
+    None
 }
 
 /// Reads a character from the keyboard buffer, waiting (yielding) until one is available.

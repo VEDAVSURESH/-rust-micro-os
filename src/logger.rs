@@ -11,9 +11,18 @@
 //! the VGA text buffer (with level-specific colors) and the COM1 serial console.
 
 use core::fmt;
+use core::sync::atomic::{AtomicBool, Ordering};
 use crate::vga_buffer::{Color, WRITER};
 use crate::{serial_print, serial_println};
 use crate::timer;
+
+/// Global flag controlling whether logs are written to the VGA screen.
+static VGA_LOGGING_ENABLED: AtomicBool = AtomicBool::new(true);
+
+/// Enables or disables output of log messages to the VGA display.
+pub fn set_vga_logging(enabled: bool) {
+    VGA_LOGGING_ENABLED.store(enabled, Ordering::SeqCst);
+}
 
 /// Logging severity levels.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -64,8 +73,8 @@ pub fn _log(level: LogLevel, args: fmt::Arguments) {
     crate::serial::SERIAL1.lock().write_fmt(args).unwrap();
     serial_println!();
 
-    // 2. Output to VGA text display with level-specific color formatting
-    {
+    // 2. Output to VGA text display with level-specific color formatting (if enabled)
+    if VGA_LOGGING_ENABLED.load(Ordering::Relaxed) {
         let mut writer = WRITER.lock();
         writer.set_color(Color::DarkGray, Color::Black);
         write!(writer, "[{:03}.{:02}s] [", seconds, centis).unwrap();
