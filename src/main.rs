@@ -34,7 +34,7 @@ bootloader::entry_point!(kernel_main);
 fn kernel_main(boot_info: &'static bootloader::BootInfo) -> ! {
     // 1. Initial banner on serial and VGA
     serial_println!("========================================");
-    serial_println!("      JainOS Kernel v0.1.0              ");
+    serial_println!("      JainOS Kernel v0.3.1              ");
     serial_println!("  A Rust-Based Educational Micro-OS     ");
     serial_println!("========================================");
     serial_println!("[SERIAL] COM1 UART 16550 initialized at 115,200 baud.");
@@ -43,7 +43,7 @@ fn kernel_main(boot_info: &'static bootloader::BootInfo) -> ! {
         .lock()
         .set_color(vga_buffer::Color::LightCyan, vga_buffer::Color::Black);
     println!("========================================");
-    println!("      JainOS Kernel v0.1.0              ");
+    println!("      JainOS Kernel v0.3.1              ");
     println!("  A Rust-Based Educational Micro-OS     ");
     println!("========================================");
 
@@ -69,7 +69,7 @@ fn kernel_main(boot_info: &'static bootloader::BootInfo) -> ! {
     x86_64::instructions::interrupts::enable();
 
     // 8. Announce initialization through structured logger
-    log_info!("JainOS Kernel v0.1.0 boot complete.");
+    log_info!("JainOS Kernel v0.3.1 boot complete.");
     log_info!("GDT, TSS, and IDT configured successfully.");
     log_info!("8259 PIC remapped (Master=32, Slave=40). IRQ0 unmasked.");
     log_info!("8254 PIT Channel 0 running at 100 Hz (10 ms per tick).");

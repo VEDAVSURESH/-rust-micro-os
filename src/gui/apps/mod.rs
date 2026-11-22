@@ -4,6 +4,7 @@ pub mod about;
 pub mod browser;
 pub mod file_manager;
 pub mod games;
+pub mod network;
 pub mod network_center;
 pub mod riftnet;
 pub mod settings;

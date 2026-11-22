@@ -1,137 +1,221 @@
 #!/usr/bin/env python3
 """
-JainOS Windows Host Wi-Fi Helper Service
+JainOS Windows Host Wi-Fi Helper Service (v0.3.1)
 Author: Vedav Suresh (USN: 25BTRCL280)
 Project: JainOS — Rust Micro Operating System
 
-This lightweight service runs on the Windows host machine.
-It queries the host's actual Wi-Fi adapter state and available SSIDs using Windows Netsh,
-and provides this information to the JainOS guest over TCP port 19820.
+Provides genuine host Windows Wi-Fi telemetry and connection management
+to the JainOS guest operating system over TCP port 19820 (gateway 10.0.2.2).
 """
 
 import subprocess
 import socket
 import sys
-import re
-import threading
 import time
+import threading
+import shutil
 
 HOST = "0.0.0.0"
 PORT = 19820
+NETSH_BIN = shutil.which("netsh") or shutil.which("netsh.exe") or "netsh.exe"
 
-def get_host_wifi_info():
-    info = {
-        "connected_ssid": "Disconnected",
-        "signal": "0%",
+def get_wifi_info():
+    iface = {
+        "adapter": "Wi-Fi",
         "state": "DISCONNECTED",
-        "adapter": "Unknown",
+        "connected_ssid": "None",
+        "signal": "0%",
         "radio": "802.11ax",
-        "available": []
+        "auth": "None",
     }
 
     try:
-        # 1. Query active interface
-        out = subprocess.check_output(["netsh", "wlan", "show", "interfaces"], encoding="utf-8", errors="ignore")
+        out = subprocess.check_output([NETSH_BIN, "wlan", "show", "interfaces"], text=True, errors="ignore")
         for line in out.splitlines():
             line = line.strip()
             if line.startswith("Description"):
-                info["adapter"] = line.split(":", 1)[1].strip()
+                iface["adapter"] = line.split(":", 1)[1].strip()
             elif line.startswith("State"):
-                val = line.split(":", 1)[1].strip()
-                if "connected" in val.lower():
-                    info["state"] = "CONNECTED"
-            elif line.startswith("SSID") and not line.startswith("SSID "):
-                info["connected_ssid"] = line.split(":", 1)[1].strip()
+                val = line.split(":", 1)[1].strip().lower()
+                iface["state"] = "CONNECTED" if "connected" in val else "DISCONNECTED"
+            elif line.startswith("SSID") and ":" in line and not line.startswith("SSID 1"):
+                parts = line.split(":", 1)
+                if parts[0].strip() == "SSID":
+                    iface["connected_ssid"] = parts[1].strip()
             elif line.startswith("Signal"):
-                info["signal"] = line.split(":", 1)[1].strip()
+                iface["signal"] = line.split(":", 1)[1].strip()
             elif line.startswith("Radio type"):
-                info["radio"] = line.split(":", 1)[1].strip()
+                iface["radio"] = line.split(":", 1)[1].strip()
+            elif line.startswith("Authentication"):
+                iface["auth"] = line.split(":", 1)[1].strip()
     except Exception as e:
-        print(f"[-] Error querying interfaces: {e}")
+        print(f"[-] Interface error: {e}")
 
+    # Read saved profiles
+    saved_profiles = set()
     try:
-        # 2. Query available visible networks
-        net_out = subprocess.check_output(["netsh", "wlan", "show", "networks"], encoding="utf-8", errors="ignore")
-        ssids = []
-        for line in net_out.splitlines():
+        p_out = subprocess.check_output([NETSH_BIN, "wlan", "show", "profiles"], text=True, errors="ignore")
+        for line in p_out.splitlines():
+            line = line.strip()
+            if "All User Profile" in line and ":" in line:
+                prof = line.split(":", 1)[1].strip()
+                if prof:
+                    saved_profiles.add(prof)
+    except Exception as e:
+        print(f"[-] Profile error: {e}")
+
+    # Read visible networks
+    networks = []
+    seen_ssids = set()
+    try:
+        n_out = subprocess.check_output([NETSH_BIN, "wlan", "show", "networks", "mode=bssid"], text=True, errors="ignore")
+        cur_net = None
+        for line in n_out.splitlines():
             line = line.strip()
             if line.startswith("SSID ") and ":" in line:
-                ssid_name = line.split(":", 1)[1].strip()
-                if ssid_name and ssid_name not in ssids:
-                    ssids.append(ssid_name)
-        info["available"] = ssids
+                if cur_net and cur_net["ssid"] and cur_net["ssid"] not in seen_ssids:
+                    networks.append(cur_net)
+                    seen_ssids.add(cur_net["ssid"])
+                ssid_val = line.split(":", 1)[1].strip()
+                cur_net = {
+                    "ssid": ssid_val,
+                    "auth": "Open",
+                    "signal": "0%",
+                    "connected": (ssid_val == iface["connected_ssid"] and iface["state"] == "CONNECTED"),
+                    "saved": (ssid_val in saved_profiles),
+                }
+            elif cur_net:
+                if line.startswith("Authentication"):
+                    cur_net["auth"] = line.split(":", 1)[1].strip()
+                elif line.startswith("Signal"):
+                    cur_net["signal"] = line.split(":", 1)[1].strip()
+        if cur_net and cur_net["ssid"] and cur_net["ssid"] not in seen_ssids:
+            networks.append(cur_net)
+            seen_ssids.add(cur_net["ssid"])
     except Exception as e:
-        print(f"[-] Error querying networks: {e}")
+        print(f"[-] Networks error: {e}")
 
-    return info
+    # Always ensure connected network is in the list
+    if iface["state"] == "CONNECTED" and iface["connected_ssid"] != "None":
+        if iface["connected_ssid"] not in seen_ssids:
+            networks.insert(0, {
+                "ssid": iface["connected_ssid"],
+                "auth": iface["auth"],
+                "signal": iface["signal"],
+                "connected": True,
+                "saved": True,
+            })
+            seen_ssids.add(iface["connected_ssid"])
 
-def format_response(info):
-    avail_str = ",".join(info["available"]) if info["available"] else "None"
-    # Format plain text for easy parsing inside bare-metal Rust kernel
-    return (
-        f"RIFTNET_WIFI_V1\n"
-        f"STATE:{info['state']}\n"
-        f"SSID:{info['connected_ssid']}\n"
-        f"SIGNAL:{info['signal']}\n"
-        f"ADAPTER:{info['adapter']}\n"
-        f"RADIO:{info['radio']}\n"
-        f"AVAILABLE:{avail_str}\n"
-        f"END\n"
-    )
+    # Append saved profiles that may be nearby but not beaconing immediately
+    for prof in sorted(saved_profiles):
+        if prof not in seen_ssids and len(networks) < 12:
+            networks.append({
+                "ssid": prof,
+                "auth": "Saved Profile",
+                "signal": "Saved",
+                "connected": False,
+                "saved": True,
+            })
+            seen_ssids.add(prof)
+
+    # Format protocol JAINOS_WIFI_V2
+    resp_lines = [
+        "JAINOS_WIFI_V2",
+        f"STATE:{iface['state']}",
+        f"CONNECTED_SSID:{iface['connected_ssid']}",
+        f"SIGNAL:{iface['signal']}",
+        f"ADAPTER:{iface['adapter']}",
+        f"RADIO:{iface['radio']}",
+        f"AUTH:{iface['auth']}",
+        "NETWORKS:"
+    ]
+
+    for net in networks:
+        is_conn = "YES" if net["connected"] else "NO"
+        is_saved = "YES" if net["saved"] else "NO"
+        resp_lines.append(f"{net['ssid']}|{net['signal']}|{net['auth']}|{is_conn}|{is_saved}")
+
+    resp_lines.append("END")
+    return "\n".join(resp_lines) + "\n"
+
+def handle_connect(target_ssid):
+    print(f"[*] Attempting Wi-Fi connection to: '{target_ssid}'")
+    try:
+        res = subprocess.run([NETSH_BIN, "wlan", "connect", f"name={target_ssid}"], capture_output=True, text=True)
+        time.sleep(2.0)
+        # Verify connection
+        info = get_wifi_info()
+        if target_ssid in info and "STATE:CONNECTED" in info:
+            return "OK:CONNECTED\n"
+        elif "completed successfully" in res.stdout:
+            return "OK:PENDING\n"
+        else:
+            return f"FAIL:{res.stdout.strip() or res.stderr.strip() or 'Connection failed'}\n"
+    except Exception as e:
+        return f"FAIL:{e}\n"
+
+def handle_disconnect():
+    print("[*] Disconnecting host Wi-Fi...")
+    try:
+        subprocess.run([NETSH_BIN, "wlan", "disconnect"], capture_output=True)
+        time.sleep(1.0)
+        return "OK:DISCONNECTED\n"
+    except Exception as e:
+        return f"FAIL:{e}\n"
 
 def handle_client(conn, addr):
     try:
-        conn.settimeout(3.0)
-        req = conn.recv(1024).decode('utf-8', errors='ignore')
-        print(f"[+] Request from {addr}: {req.strip()}")
+        conn.settimeout(4.0)
+        req = conn.recv(1024).decode("utf-8", errors="ignore").strip()
+        print(f"[+] Request from {addr}: '{req}'")
 
         if req.startswith("CONNECT"):
-            # Optional connection command
             target = req.split(None, 1)[1].strip() if len(req.split()) > 1 else ""
             if target:
-                subprocess.run(["netsh", "wlan", "connect", f"name={target}"], capture_output=True)
-            time.sleep(1)
-
-        info = get_host_wifi_info()
-        resp = format_response(info)
-        conn.sendall(resp.encode('utf-8'))
+                resp = handle_connect(target)
+            else:
+                resp = "FAIL:Missing SSID\n"
+            conn.sendall(resp.encode("utf-8"))
+        elif req == "DISCONNECT":
+            resp = handle_disconnect()
+            conn.sendall(resp.encode("utf-8"))
+        else:
+            # SCAN or STATUS or default
+            resp = get_wifi_info()
+            conn.sendall(resp.encode("utf-8"))
     except Exception as e:
         print(f"[-] Client error: {e}")
     finally:
         conn.close()
 
 def main():
-    print("=================================================================")
-    print("       JainOS Windows Host Wi-Fi Helper Service (Port 19820)     ")
-    print("       Providing real Windows laptop Wi-Fi telemetry to RiftNet  ")
-    print("=================================================================")
-
-    # Test local query
-    initial = get_host_wifi_info()
-    print(f"[*] Detected Host Adapter : {initial['adapter']}")
-    print(f"[*] Current Connected SSID: {initial['connected_ssid']} ({initial['signal']})")
-    print(f"[*] Visible Host Networks : {', '.join(initial['available'])}")
-
     server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    server.bind((HOST, PORT))
+
+    try:
+        server.bind((HOST, PORT))
+    except Exception as e:
+        print(f"[-] Failed to bind {HOST}:{PORT}: {e}")
+        sys.exit(1)
+
     server.listen(5)
-    print(f"[+] Listening on {HOST}:{PORT} (Reachable by JainOS at 10.0.2.2:{PORT})...\n")
+    print("================================================================")
+    print("      JainOS Host Wi-Fi Helper Service (v0.3.1)")
+    print(f"      Listening on {HOST}:{PORT} (VirtualBox gateway 10.0.2.2)")
+    print("      Serving genuine Windows Wi-Fi telemetry to JainOS")
+    print("================================================================")
 
     while True:
         try:
             conn, addr = server.accept()
-            t = threading.Thread(target=handle_client, args=(conn, addr))
-            t.daemon = True
+            t = threading.Thread(target=handle_client, args=(conn, addr), daemon=True)
             t.start()
         except KeyboardInterrupt:
-            print("\n[*] Stopping helper...")
+            print("\nShutting down helper.")
             break
         except Exception as e:
-            print(f"[-] Server error: {e}")
-            break
+            print(f"[-] Accept error: {e}")
 
-    server.close()
-
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

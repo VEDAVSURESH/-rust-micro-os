@@ -1,4 +1,4 @@
-//! Custom Wallpaper, Branding Emblem & Desktop Icons for JainOS.
+//! Custom Wallpaper, Branding Emblem & Desktop Icons for JainOS (v0.3.1).
 //!
 //! Renders the deep navy gradient background, central JainOS geometric emblem,
 //! university/developer credits, and desktop application shortcuts.
@@ -20,7 +20,7 @@ pub struct DesktopIcon {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AppIconType {
     Terminal,
-    RiftNet,
+    Network,
     WebBrowser,
     FileManager,
     Games,
@@ -31,7 +31,7 @@ pub enum AppIconType {
 
 pub const DESKTOP_ICONS: [DesktopIcon; 8] = [
     DesktopIcon { id: 1, x: 28, y: 24,  w: 72, h: 58, label: "Terminal", icon_type: AppIconType::Terminal },
-    DesktopIcon { id: 2, x: 28, y: 92,  w: 72, h: 58, label: "RiftNet",  icon_type: AppIconType::RiftNet },
+    DesktopIcon { id: 2, x: 28, y: 92,  w: 72, h: 58, label: "Network",  icon_type: AppIconType::Network },
     DesktopIcon { id: 3, x: 28, y: 160, w: 72, h: 58, label: "Browser",  icon_type: AppIconType::WebBrowser },
     DesktopIcon { id: 4, x: 28, y: 228, w: 72, h: 58, label: "Files",    icon_type: AppIconType::FileManager },
     DesktopIcon { id: 5, x: 28, y: 296, w: 72, h: 58, label: "Games",    icon_type: AppIconType::Games },
@@ -59,7 +59,7 @@ pub fn draw_wallpaper(canvas: &mut Canvas, width: usize, height: usize) {
     let cx = width as i32 / 2;
     let cy = height as i32 / 2 - 30;
 
-    // Outer decorative glow circle/diamond
+    // Outer decorative glow diamond
     for r in 0..6 {
         let col = if r % 2 == 0 { 0x001E3A8A } else { 0x002563EB };
         canvas.draw_rect(cx - 70 - r, cy - 70 - r, 140 + r * 2, 140 + r * 2, col);
@@ -89,7 +89,7 @@ pub fn draw_wallpaper(canvas: &mut Canvas, width: usize, height: usize) {
     let sub_x = cx - (subtitle.len() as i32 * 4);
     canvas.draw_string(sub_x, cy + 114, subtitle, 0x0094A3B8);
 
-    let info = "JainOS v0.3.0 • x86_64 Long Mode • Developed by Vedav Suresh";
+    let info = "JainOS v0.3.1 • x86_64 Long Mode • Developed by Vedav Suresh";
     let info_x = cx - (info.len() as i32 * 4);
     canvas.draw_string(info_x, cy + 134, info, 0x0064748B);
 
@@ -112,12 +112,14 @@ fn draw_desktop_icon(canvas: &mut Canvas, icon: &DesktopIcon) {
             canvas.draw_rect(icon.x + 4, icon.y + 4, 40, 30, 0x00475569);
             canvas.draw_string(icon.x + 10, icon.y + 12, ">_", 0x004ADE80);
         }
-        AppIconType::RiftNet => {
+        AppIconType::Network => {
+            // Wi-Fi wave arcs & Ethernet connector emblem
             canvas.fill_rect(icon.x + 6, icon.y + 6, 36, 26, 0x000284C7);
             canvas.draw_rect(icon.x + 6, icon.y + 6, 36, 26, 0x0038BDF8);
-            canvas.fill_rect(icon.x + 10, icon.y + 12, 6, 6, 0x0022C55E);
-            canvas.fill_rect(icon.x + 22, icon.y + 12, 6, 6, 0x00FACC15);
-            canvas.draw_string(icon.x + 10, icon.y + 20, "NET", 0x00FFFFFF);
+            // Wi-Fi signal broadcast dot and arcs
+            canvas.fill_rect(icon.x + 22, icon.y + 22, 4, 4, 0x0022C55E);
+            canvas.draw_rect(icon.x + 17, icon.y + 17, 14, 10, 0x00F8FAFC);
+            canvas.draw_rect(icon.x + 12, icon.y + 11, 24, 16, 0x0038BDF8);
         }
         AppIconType::WebBrowser => {
             canvas.fill_rect(icon.x + 6, icon.y + 6, 36, 26, 0x001D4ED8);

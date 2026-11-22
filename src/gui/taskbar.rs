@@ -1,4 +1,4 @@
-//! Taskbar, System Tray, Live Clock & Start Menu for JainOS.
+//! Taskbar, System Tray, Live Clock & Start Menu for JainOS (v0.3.1).
 //!
 //! Provides the bottom dock with Start menu toggle, active window tabs,
 //! live network link telemetry, heap memory gauge, and real-time CMOS clock.
@@ -39,7 +39,7 @@ pub struct StartMenuItem {
 
 pub const START_ITEMS: [StartMenuItem; 9] = [
     StartMenuItem { label: "Terminal", icon_type: Some(AppIconType::Terminal), is_reboot: false },
-    StartMenuItem { label: "RiftNet Manager", icon_type: Some(AppIconType::RiftNet), is_reboot: false },
+    StartMenuItem { label: "Network", icon_type: Some(AppIconType::Network), is_reboot: false },
     StartMenuItem { label: "Web Browser", icon_type: Some(AppIconType::WebBrowser), is_reboot: false },
     StartMenuItem { label: "File Manager", icon_type: Some(AppIconType::FileManager), is_reboot: false },
     StartMenuItem { label: "Arcade Games", icon_type: Some(AppIconType::Games), is_reboot: false },

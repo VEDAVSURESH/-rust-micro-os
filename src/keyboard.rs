@@ -193,7 +193,7 @@ impl KeyboardDecoder {
             0x4E => result = Some('+'),
             0x37 => result = Some('*'),
 
-            // Function keys F1..F8 for window/app navigation
+            // Function keys F1..F10 for window/app navigation
             0x3B => result = Some('\u{F1}'),
             0x3C => result = Some('\u{F2}'),
             0x3D => result = Some('\u{F3}'),
@@ -202,6 +202,8 @@ impl KeyboardDecoder {
             0x40 => result = Some('\u{F6}'),
             0x41 => result = Some('\u{F7}'),
             0x42 => result = Some('\u{F8}'),
+            0x43 => result = Some('\u{F9}'),
+            0x44 => result = Some('\u{FA}'),
 
             _ => {}
         }

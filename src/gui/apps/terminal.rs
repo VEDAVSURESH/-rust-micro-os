@@ -1,4 +1,4 @@
-//! Interactive Graphical Terminal Application for JainOS.
+//! Interactive Graphical Terminal Application for JainOS (v0.3.1).
 //!
 //! Provides a full-featured terminal emulator inside a GUI window, executing
 //! kernel commands (whoami, ping, curl, mem, tasks, date, pci, ifconfig, etc.).
@@ -27,7 +27,7 @@ impl TerminalApp {
             cursor_tick: 0,
             pending_launch: None,
         };
-        app.history.push(String::from("JainOS Interactive Shell v0.3.0 (GUI Mode)"));
+        app.history.push(String::from("JainOS Interactive Shell v0.3.1 (GUI Mode)"));
         app.history.push(String::from("Type 'help' for commands, or 'whoami' for user identity."));
         app.history.push(String::new());
         app
@@ -83,7 +83,7 @@ impl TerminalApp {
                 self.history.push(String::from("  pci          - Enumerate and list PCI hardware bus"));
                 self.history.push(String::from("  uname        - Print kernel architecture"));
                 self.history.push(String::from("  version      - Display operating system release and credits"));
-                self.history.push(String::from("  riftnet      - Launch RiftNet Network Manager"));
+                self.history.push(String::from("  network      - Launch Network Control Center"));
                 self.history.push(String::from("  browser      - Launch Web Browser"));
                 self.history.push(String::from("  games        - Launch Arcade Games suite (Snake, Pong, etc.)"));
                 self.history.push(String::from("  files        - Launch Virtual File Manager"));
@@ -97,10 +97,10 @@ impl TerminalApp {
                 self.history.clear();
             }
             "uname" => {
-                self.history.push(String::from("JainOS 0.3.0 x86_64 bare-metal microkernel"));
+                self.history.push(String::from("JainOS 0.3.1 x86_64 bare-metal microkernel"));
             }
             "version" => {
-                self.history.push(String::from("JainOS v0.3.0 (Phase 2 - Native Graphical Edition)"));
+                self.history.push(String::from("JainOS v0.3.1 (Phase 2 - Native Graphical Edition)"));
                 self.history.push(String::from("Developer: Vedav Suresh (USN: 25BTRCL280)"));
                 self.history.push(String::from("College OS Project: All requirements verified"));
             }
@@ -234,9 +234,9 @@ impl TerminalApp {
                 self.pending_launch = Some(crate::gui::AppKind::About);
                 self.history.push(String::from("Opening About JainOS..."));
             }
-            "riftnet" | "network" | "net" | "wifi" => {
-                self.pending_launch = Some(crate::gui::AppKind::RiftNet);
-                self.history.push(String::from("Opening RiftNet Network Manager..."));
+            "network" | "net" | "wifi" | "riftnet" => {
+                self.pending_launch = Some(crate::gui::AppKind::Network);
+                self.history.push(String::from("Opening Network Control Center..."));
             }
             "reboot" => {
                 self.history.push(String::from("Rebooting system..."));

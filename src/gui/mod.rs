@@ -1,4 +1,4 @@
-//! JainOS Native Graphical Desktop Environment & Window Manager.
+//! JainOS Native Graphical Desktop Environment & Window Manager (v0.3.1).
 //!
 //! Features:
 //! - Full double-buffered linear framebuffer composition (Bochs BGA True Color)
@@ -6,7 +6,7 @@
 //! - Sleek dark navy / electric blue branding and custom wallpaper
 //! - High-precision custom mouse pointer with IRQ 12 hardware tracking & keyboard fallback
 //! - Bottom taskbar with Start Menu, active window dock, live RTC clock, and network telemetry
-//! - Complete suite of 8 native applications (Terminal, RiftNet, Browser, Files, Games, SysMon, Settings, About)
+//! - Complete suite of 8 native applications (Terminal, Network, Browser, Files, Games, SysMon, Settings, About)
 
 pub mod apps;
 pub mod canvas;
@@ -22,7 +22,7 @@ use crate::gui::apps::about::AboutApp;
 use crate::gui::apps::browser::BrowserApp;
 use crate::gui::apps::file_manager::FileManagerApp;
 use crate::gui::apps::games::GamesApp;
-use crate::gui::apps::riftnet::RiftNetApp;
+use crate::gui::apps::network::NetworkApp;
 use crate::gui::apps::settings::SettingsApp;
 use crate::gui::apps::system_monitor::SystemMonitorApp;
 use crate::gui::apps::terminal::TerminalApp;
@@ -35,7 +35,7 @@ use crate::sync::Spinlock;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AppKind {
     Terminal,
-    RiftNet,
+    Network,
     WebBrowser,
     FileManager,
     Games,
@@ -59,7 +59,7 @@ pub struct Desktop {
 
     // App instances
     pub terminal: TerminalApp,
-    pub riftnet: RiftNetApp,
+    pub network: NetworkApp,
     pub browser: BrowserApp,
     pub file_manager: FileManagerApp,
     pub games: GamesApp,
@@ -80,7 +80,7 @@ impl Desktop {
             prev_left_button: false,
             dragging_win_idx: None,
             terminal: TerminalApp::new(),
-            riftnet: RiftNetApp::new(),
+            network: NetworkApp::new(),
             browser: BrowserApp::new(),
             file_manager: FileManagerApp::new(),
             games: GamesApp::new(),
@@ -89,8 +89,8 @@ impl Desktop {
             about: AboutApp::new(),
         };
 
-        // Open default startup windows: Terminal and RiftNet Manager
-        d.open_app(AppKind::RiftNet);
+        // Open default startup windows: Terminal and Network Center
+        d.open_app(AppKind::Network);
         d.open_app(AppKind::Terminal);
 
         d
@@ -113,8 +113,8 @@ impl Desktop {
 
         let (title, x, y, w, h) = match kind {
             AppKind::Terminal => ("Terminal - JainOS Shell (vedav)", 120, 60, 560, 360),
-            AppKind::RiftNet => ("RiftNet - Dual Network Control Center", 180, 80, 600, 410),
-            AppKind::WebBrowser => ("Web Browser - JainOS HTML Web Client", 150, 70, 580, 400),
+            AppKind::Network => ("Network - Connection & Wi-Fi Control Center", 180, 75, 610, 420),
+            AppKind::WebBrowser => ("Web Browser - JainOS HTML Web Client", 140, 55, 660, 440),
             AppKind::FileManager => ("File Manager - Virtual File System", 160, 90, 540, 370),
             AppKind::Games => ("JainOS Arcade - Retro 4-Game Suite", 170, 75, 560, 380),
             AppKind::SystemMonitor => ("System Monitor - Kernel Telemetry", 210, 100, 520, 380),
@@ -164,7 +164,7 @@ impl Desktop {
         while let Some(c) = crate::keyboard::read_char() {
             match c {
                 '\u{F1}' => self.open_app(AppKind::Terminal),
-                '\u{F2}' => self.open_app(AppKind::RiftNet),
+                '\u{F2}' => self.open_app(AppKind::Network),
                 '\u{F3}' => self.open_app(AppKind::WebBrowser),
                 '\u{F4}' => self.open_app(AppKind::FileManager),
                 '\u{F5}' => self.open_app(AppKind::Games),
@@ -187,6 +187,7 @@ impl Desktop {
                         if !top_win.win.is_minimized {
                             match top_win.kind {
                                 AppKind::Terminal => self.terminal.handle_char(c),
+                                AppKind::Network => self.network.handle_char(c),
                                 AppKind::WebBrowser => self.browser.handle_char(c),
                                 AppKind::Games => self.games.handle_char(c),
                                 _ => {}
@@ -270,7 +271,7 @@ impl Desktop {
                 TaskbarAction::LaunchApp(app_icon) => {
                     let kind = match app_icon {
                         AppIconType::Terminal => AppKind::Terminal,
-                        AppIconType::RiftNet => AppKind::RiftNet,
+                        AppIconType::Network => AppKind::Network,
                         AppIconType::WebBrowser => AppKind::WebBrowser,
                         AppIconType::FileManager => AppKind::FileManager,
                         AppIconType::Games => AppKind::Games,
@@ -332,7 +333,7 @@ impl Desktop {
 
                             match self.windows[idx].kind {
                                 AppKind::Terminal => {}
-                                AppKind::RiftNet => self.riftnet.handle_click(rel_x, rel_y),
+                                AppKind::Network => self.network.handle_click(rel_x, rel_y),
                                 AppKind::WebBrowser => self.browser.handle_click(rel_x, rel_y),
                                 AppKind::FileManager => self.file_manager.handle_click(rel_x, rel_y),
                                 AppKind::Games => self.games.handle_click(rel_x, rel_y),
@@ -364,7 +365,7 @@ impl Desktop {
                 if let Some(app_type) = hit_test_icon(mouse.x, mouse.y) {
                     let kind = match app_type {
                         AppIconType::Terminal => AppKind::Terminal,
-                        AppIconType::RiftNet => AppKind::RiftNet,
+                        AppIconType::Network => AppKind::Network,
                         AppIconType::WebBrowser => AppKind::WebBrowser,
                         AppIconType::FileManager => AppKind::FileManager,
                         AppIconType::Games => AppKind::Games,
@@ -391,7 +392,7 @@ impl Desktop {
 
                 match dwin.kind {
                     AppKind::Terminal => self.terminal.draw(&mut self.canvas, cx, cy, cw, ch),
-                    AppKind::RiftNet => self.riftnet.draw(&mut self.canvas, cx, cy, cw, ch),
+                    AppKind::Network => self.network.draw(&mut self.canvas, cx, cy, cw, ch),
                     AppKind::WebBrowser => self.browser.draw(&mut self.canvas, cx, cy, cw, ch),
                     AppKind::FileManager => self.file_manager.draw(&mut self.canvas, cx, cy, cw, ch),
                     AppKind::Games => self.games.draw(&mut self.canvas, cx, cy, cw, ch),

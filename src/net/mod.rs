@@ -604,10 +604,17 @@ pub fn tcp_request(target_ip: [u8; 4], port: u16, payload: &[u8], timeout_ticks:
     // 2. Wait for SYN-ACK
     let mut connected = false;
     let start_tick = crate::timer::current_ticks();
-    let syn_timeout = timeout_ticks.min(250).max(50);
+    let syn_timeout = timeout_ticks.min(350).max(100);
+    let mut syn_sent_tick = start_tick;
 
     while crate::timer::current_ticks().saturating_sub(start_tick) < syn_timeout {
         poll();
+
+        // Retransmit SYN after 1.5s if no response yet
+        if !connected && crate::timer::current_ticks().saturating_sub(syn_sent_tick) > 150 {
+            send_ipv4_packet(target_ip, IP_PROTO_TCP, &syn_pkt);
+            syn_sent_tick = crate::timer::current_ticks();
+        }
         let pkt_opt = {
             let mut q = TCP_RX_QUEUE.lock();
             if q.is_empty() { None } else { Some(q.remove(0)) }
@@ -719,6 +726,13 @@ pub fn tcp_request(target_ip: [u8; 4], port: u16, payload: &[u8], timeout_ticks:
                                     send_ipv4_packet(target_ip, IP_PROTO_TCP, &fin_ack);
                                     break;
                                 }
+
+                                // Early exit if full HTML or Wi-Fi payload has arrived
+                                if response_body.windows(7).any(|w| w.eq_ignore_ascii_case(b"</html>"))
+                                    || response_body.windows(4).any(|w| w == b"END\n")
+                                {
+                                    break;
+                                }
                             }
                         }
                     }
@@ -751,7 +765,7 @@ pub fn http_get(url: &str) -> Result<(u16, String, String), String> {
         .ok_or_else(|| alloc::format!("Could not resolve host: {}", host_clean))?;
 
     let req_str = alloc::format!(
-        "GET {} HTTP/1.1\r\nHost: {}\r\nUser-Agent: JainOS/0.3.0 (Rust-BareMetal)\r\nAccept: */*\r\nConnection: close\r\n\r\n",
+        "GET {} HTTP/1.1\r\nHost: {}\r\nUser-Agent: JainOS/0.3.1 (Rust-BareMetal)\r\nAccept: */*\r\nConnection: close\r\n\r\n",
         path, host_clean
     );
 

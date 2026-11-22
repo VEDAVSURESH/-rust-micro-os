@@ -1,17 +1,15 @@
-<#
-.SYNOPSIS
-    JainOS Windows Host Wi-Fi Helper Service (PowerShell edition)
-.DESCRIPTION
-    Queries the Windows laptop Wi-Fi interfaces and networks, serving them to JainOS guest over TCP 19820.
-#>
+﻿# JainOS Windows Host Wi-Fi Helper Service (PowerShell edition v0.3.1)
+# Author: Vedav Suresh (USN: 25BTRCL280)
+# Project: JainOS — Rust Micro Operating System
 
 $port = 19820
 $listener = New-Object System.Net.Sockets.TcpListener([System.Net.IPAddress]::Any, $port)
 $listener.Start()
-Write-Host "=================================================================" -ForegroundColor Cyan
-Write-Host "       JainOS Windows Host Wi-Fi Helper Service (Port $port)     " -ForegroundColor Yellow
-Write-Host "=================================================================" -ForegroundColor Cyan
-Write-Host "[+] Listening for JainOS guest requests on 0.0.0.0:$port..." -ForegroundColor Green
+
+Write-Host "================================================================" -ForegroundColor Cyan
+Write-Host "      JainOS Host Wi-Fi Helper Service (v0.3.1 - PowerShell)   " -ForegroundColor Green
+Write-Host "      Listening on 0.0.0.0:$port (Gateway 10.0.2.2)            " -ForegroundColor Yellow
+Write-Host "================================================================" -ForegroundColor Cyan
 
 try {
     while ($true) {
@@ -19,57 +17,80 @@ try {
         $stream = $client.GetStream()
         $reader = New-Object System.IO.StreamReader($stream)
         $writer = New-Object System.IO.StreamWriter($stream)
+        $writer.AutoFlush = $true
 
-        $line = $reader.ReadLine()
-        Write-Host "[+] Request from $($client.Client.RemoteEndPoint): $line" -ForegroundColor DarkCyan
+        $request = $reader.ReadLine()
+        Write-Host "[+] Request: $request" -ForegroundColor Gray
 
-        # Query host Wi-Fi
-        $ifaces = netsh wlan show interfaces
-        $connectedSsid = "Disconnected"
-        $signal = "0%"
-        $state = "DISCONNECTED"
-        $adapter = "Unknown"
-        $radio = "802.11ax"
+        if ($request -match "^CONNECT (.+)") {
+            $ssid = $matches[1].Trim()
+            netsh wlan connect name="$ssid" | Out-Null
+            Start-Sleep -Seconds 1
+            $writer.WriteLine("OK:CONNECTED")
+        } elseif ($request -match "^DISCONNECT") {
+            netsh wlan disconnect | Out-Null
+            Start-Sleep -Seconds 1
+            $writer.WriteLine("OK:DISCONNECTED")
+        } else {
+            # Query interfaces
+            $ifaceOut = netsh wlan show interfaces
+            $adapter = "Wi-Fi"
+            $state = "DISCONNECTED"
+            $connectedSsid = "None"
+            $signal = "0%"
+            $radio = "802.11ax"
+            $auth = "None"
 
-        foreach ($l in $ifaces) {
-            $trimmed = $l.Trim()
-            if ($trimmed -match "^Description\s*:\s*(.*)$") { $adapter = $matches[1] }
-            elseif ($trimmed -match "^State\s*:\s*(.*)$") {
-                if ($matches[1] -match "connected") { $state = "CONNECTED" }
-            }
-            elseif ($trimmed -match "^SSID\s*:\s*(.*)$") { $connectedSsid = $matches[1] }
-            elseif ($trimmed -match "^Signal\s*:\s*(.*)$") { $signal = $matches[1] }
-            elseif ($trimmed -match "^Radio type\s*:\s*(.*)$") { $radio = $matches[1] }
-        }
-
-        # Query available networks
-        $nets = netsh wlan show networks
-        $avail = [System.Collections.Generic.List[string]]::new()
-        foreach ($l in $nets) {
-            $trimmed = $l.Trim()
-            if ($trimmed -match "^SSID \d+\s*:\s*(.*)$") {
-                $sName = $matches[1].Trim()
-                if ($sName -and (-not $avail.Contains($sName))) {
-                    $avail.Add($sName)
+            foreach ($line in ($ifaceOut -split "`n")) {
+                $trimmed = $line.Trim()
+                if ($trimmed -match "^Description\s*:\s*(.+)") { $adapter = $matches[1].Trim() }
+                if ($trimmed -match "^State\s*:\s*(.+)") {
+                    if ($matches[1] -match "connected") { $state = "CONNECTED" }
                 }
+                if ($trimmed -match "^SSID\s*:\s*(.+)" -and -not ($trimmed -match "^SSID 1")) {
+                    $connectedSsid = $matches[1].Trim()
+                }
+                if ($trimmed -match "^Signal\s*:\s*(.+)") { $signal = $matches[1].Trim() }
+                if ($trimmed -match "^Radio type\s*:\s*(.+)") { $radio = $matches[1].Trim() }
+                if ($trimmed -match "^Authentication\s*:\s*(.+)") { $auth = $matches[1].Trim() }
             }
+
+            # Query visible networks
+            $netOut = netsh wlan show networks mode=bssid
+            $networks = @()
+            $curSsid = $null
+            $curAuth = "Open"
+            $curSignal = "0%"
+
+            foreach ($line in ($netOut -split "`n")) {
+                $trimmed = $line.Trim()
+                if ($trimmed -match "^SSID \d+\s*:\s*(.+)") {
+                    if ($curSsid) {
+                        $isConn = if ($curSsid -eq $connectedSsid -and $state -eq "CONNECTED") { "YES" } else { "NO" }
+                        $networks += "$curSsid|$curSignal|$curAuth|$isConn|YES"
+                    }
+                    $curSsid = $matches[1].Trim()
+                    $curAuth = "Open"
+                    $curSignal = "0%"
+                }
+                if ($trimmed -match "^Authentication\s*:\s*(.+)") { $curAuth = $matches[1].Trim() }
+                if ($trimmed -match "^Signal\s*:\s*(.+)") { $curSignal = $matches[1].Trim() }
+            }
+            if ($curSsid) {
+                $isConn = if ($curSsid -eq $connectedSsid -and $state -eq "CONNECTED") { "YES" } else { "NO" }
+                $networks += "$curSsid|$curSignal|$curAuth|$isConn|YES"
+            }
+
+            $response = "JAINOS_WIFI_V2`nSTATE:$state`nCONNECTED_SSID:$connectedSsid`nSIGNAL:$signal`nADAPTER:$adapter`nRADIO:$radio`nAUTH:$auth`nNETWORKS:`n"
+            foreach ($net in $networks) {
+                $response += "$net`n"
+            }
+            $response += "END`n"
+            $writer.Write($response)
         }
-        $availStr = ($avail -join ",")
 
-        $response = "RIFTNET_WIFI_V1`n" +
-                    "STATE:$state`n" +
-                    "SSID:$connectedSsid`n" +
-                    "SIGNAL:$signal`n" +
-                    "ADAPTER:$adapter`n" +
-                    "RADIO:$radio`n" +
-                    "AVAILABLE:$availStr`n" +
-                    "END`n"
-
-        $writer.Write($response)
-        $writer.Flush()
         $client.Close()
     }
-}
-finally {
+} finally {
     $listener.Stop()
 }
