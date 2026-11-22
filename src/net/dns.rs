@@ -42,7 +42,51 @@ pub fn build_dns_query(id: u16, domain: &str) -> Vec<u8> {
     pkt
 }
 
+/// Skips a domain name in DNS wire format starting at `offset`.
+///
+/// Handles uncompressed label sequences, 2-byte RFC 1035 compression pointers (`0xC0XX`),
+/// and mixed label/pointer names (e.g. `\x03www\xC0\x0C`).
+/// Returns the offset immediately following the name within the record, or `None` if malformed.
+pub fn skip_name(data: &[u8], mut offset: usize) -> Option<usize> {
+    let mut iterations = 0;
+    while offset < data.len() {
+        iterations += 1;
+        if iterations > 128 {
+            // Prevent cyclic / malformed pointer infinite loops
+            return None;
+        }
+
+        let byte = data[offset];
+        if byte == 0 {
+            // Null label terminator
+            return Some(offset + 1);
+        } else if (byte & 0xC0) == 0xC0 {
+            // 2-byte compression pointer
+            if offset + 2 > data.len() {
+                return None;
+            }
+            return Some(offset + 2);
+        } else {
+            // Standard length-prefixed label (1..63 bytes)
+            let len = (byte & 0x3F) as usize;
+            if offset + 1 + len > data.len() {
+                return None;
+            }
+            offset += 1 + len;
+        }
+    }
+    None
+}
+
 /// Parses a DNS response to extract the first IPv4 (A) record address.
+///
+/// Adheres strictly to RFC 1035:
+/// - Verifies 12-byte header minimum.
+/// - Matches expected Transaction ID.
+/// - Validates QR flag (bit 15 = 1) and RCODE (bits 3:0 == 0 / NoError).
+/// - Safely skips all question records.
+/// - Traverses answer records, skipping CNAME or non-A records to find an A record.
+/// - Fully bounds-checked against packet buffer length.
 pub fn parse_dns_response(data: &[u8], expected_id: u16) -> Option<[u8; 4]> {
     if data.len() < 12 {
         return None;
@@ -69,17 +113,9 @@ pub fn parse_dns_response(data: &[u8], expected_id: u16) -> Option<[u8; 4]> {
 
     // Skip question sections
     for _ in 0..qdcount {
-        while offset < data.len() {
-            let len = data[offset] as usize;
-            if len == 0 {
-                offset += 1;
-                break;
-            }
-            if (len & 0xC0) == 0xC0 {
-                offset += 2; // Pointer
-                break;
-            }
-            offset += 1 + len;
+        offset = skip_name(data, offset)?;
+        if offset + 4 > data.len() {
+            return None;
         }
         offset += 4; // Skip QTYPE (2B) + QCLASS (2B)
     }
@@ -90,36 +126,37 @@ pub fn parse_dns_response(data: &[u8], expected_id: u16) -> Option<[u8; 4]> {
             break;
         }
 
-        // Skip NAME field (can be pointer or label series)
-        if (data[offset] & 0xC0) == 0xC0 {
-            offset += 2; // Compression pointer
-        } else {
-            while offset < data.len() {
-                let len = data[offset] as usize;
-                if len == 0 {
-                    offset += 1;
-                    break;
-                }
-                offset += 1 + len;
-            }
-        }
+        // Skip NAME field in the resource record
+        offset = skip_name(data, offset)?;
 
+        // Resource record header: TYPE (2B) + CLASS (2B) + TTL (4B) + RDLENGTH (2B) = 10 bytes
         if offset + 10 > data.len() {
-            break;
+            return None;
         }
 
         let atype = u16::from_be_bytes([data[offset], data[offset + 1]]);
         let _aclass = u16::from_be_bytes([data[offset + 2], data[offset + 3]]);
-        let _ttl = u32::from_be_bytes([data[offset + 4], data[offset + 5], data[offset + 6], data[offset + 7]]);
+        let _ttl = u32::from_be_bytes([
+            data[offset + 4],
+            data[offset + 5],
+            data[offset + 6],
+            data[offset + 7],
+        ]);
         let rdlength = u16::from_be_bytes([data[offset + 8], data[offset + 9]]) as usize;
         offset += 10;
 
-        if atype == 1 && rdlength == 4 && offset + 4 <= data.len() {
+        if offset + rdlength > data.len() {
+            return None;
+        }
+
+        // TYPE 1 = A Record (IPv4 Address, 4 bytes)
+        if atype == 1 && rdlength == 4 {
             let mut ip = [0u8; 4];
             ip.copy_from_slice(&data[offset..offset + 4]);
             return Some(ip);
         }
 
+        // Skip RDATA for non-A records (such as CNAME or MX) and continue searching
         offset += rdlength;
     }
 

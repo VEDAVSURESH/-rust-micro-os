@@ -142,10 +142,18 @@ pub fn send_ipv4_packet(dst_ip: [u8; 4], protocol: u8, payload: &[u8]) -> bool {
             && (dst_ip[2] & cfg.subnet[2] == cfg.ip[2] & cfg.subnet[2])
             && (dst_ip[3] & cfg.subnet[3] == cfg.ip[3] & cfg.subnet[3]);
 
-        let hop_ip = if is_local { dst_ip } else { cfg.gateway };
+        // In QEMU/VirtualBox slirp NAT, the DNS server (10.0.2.3) is an internal alias
+        // on the same subnet that does not respond to ARP independently; routing to gateway (10.0.2.2)
+        // routes correctly to the host resolver. For other local IPs, target them directly.
+        let hop_ip = if is_local && dst_ip != cfg.dns {
+            dst_ip
+        } else {
+            cfg.gateway
+        };
 
-        // Look up in ARP cache
-        let mac = match ARP_TABLE.lock().lookup(hop_ip) {
+        // Query ARP cache without holding spinlock across polling / task yields
+        let cached_mac = ARP_TABLE.lock().lookup(hop_ip);
+        let mac = match cached_mac {
             Some(m) => m,
             None => {
                 // Send ARP request and poll for reply
@@ -164,7 +172,14 @@ pub fn send_ipv4_packet(dst_ip: [u8; 4], protocol: u8, payload: &[u8]) -> bool {
 
                 match found {
                     Some(m) => m,
-                    None => BROADCAST_MAC, // Fallback to broadcast
+                    None => {
+                        // Fallback: If hop_ip ARP fails, try gateway MAC if known, else broadcast
+                        if let Some(gw_mac) = ARP_TABLE.lock().lookup(cfg.gateway) {
+                            gw_mac
+                        } else {
+                            BROADCAST_MAC
+                        }
+                    }
                 }
             }
         };
@@ -355,38 +370,48 @@ pub fn resolve_host(host: &str) -> Option<[u8; 4]> {
         return None;
     }
 
-    let tx_id = 0x5678u16;
+    // Dynamic transaction ID to distinguish distinct requests
+    let tx_id = 0x5000u16 ^ (crate::timer::current_ticks() as u16 & 0x0FFF);
     let query_payload = dns::build_dns_query(tx_id, host);
-    let udp_query = udp::build_udp_packet(cfg.ip, cfg.dns, 54321, dns::DNS_PORT, &query_payload);
+    let src_port = 49152 + (crate::timer::current_ticks() as u16 % 10000);
+    let udp_query = udp::build_udp_packet(cfg.ip, cfg.dns, src_port, dns::DNS_PORT, &query_payload);
 
-    if !send_ipv4_packet(cfg.dns, IP_PROTO_UDP, &udp_query) {
-        return None;
-    }
+    // Attempt DNS query with 2 tries (1.5 seconds per try)
+    for _attempt in 0..2 {
+        // Clear DNS RX queue BEFORE transmitting to receive only the new reply
+        DNS_RX_QUEUE.lock().clear();
 
-    DNS_RX_QUEUE.lock().clear();
+        if !send_ipv4_packet(cfg.dns, IP_PROTO_UDP, &udp_query) {
+            continue;
+        }
 
-    let start_tick = crate::timer::current_ticks();
-    while crate::timer::current_ticks().saturating_sub(start_tick) < 300 {
-        poll();
-        let pkt_opt = {
-            let mut q = DNS_RX_QUEUE.lock();
-            if q.is_empty() { None } else { Some(q.remove(0)) }
-        };
+        let start_tick = crate::timer::current_ticks();
+        while crate::timer::current_ticks().saturating_sub(start_tick) < 150 {
+            poll();
+            let pkt_opt = {
+                let mut q = DNS_RX_QUEUE.lock();
+                if q.is_empty() {
+                    None
+                } else {
+                    Some(q.remove(0))
+                }
+            };
 
-        if let Some(rx_data) = pkt_opt {
-            if let Some((_eth, eth_payload)) = EthernetHeader::parse(&rx_data) {
-                if let Some((_ip, ip_payload)) = Ipv4Header::parse(eth_payload) {
-                    if let Some((udp_h, udp_payload)) = udp::UdpHeader::parse(ip_payload) {
-                        if udp_h.src_port == dns::DNS_PORT {
-                            if let Some(resolved_ip) = dns::parse_dns_response(udp_payload, tx_id) {
-                                return Some(resolved_ip);
+            if let Some(rx_data) = pkt_opt {
+                if let Some((_eth, eth_payload)) = EthernetHeader::parse(&rx_data) {
+                    if let Some((_ip, ip_payload)) = Ipv4Header::parse(eth_payload) {
+                        if let Some((udp_h, udp_payload)) = udp::UdpHeader::parse(ip_payload) {
+                            if udp_h.src_port == dns::DNS_PORT && udp_h.dst_port == src_port {
+                                if let Some(resolved_ip) = dns::parse_dns_response(udp_payload, tx_id) {
+                                    return Some(resolved_ip);
+                                }
                             }
                         }
                     }
                 }
             }
+            crate::task::yield_now();
         }
-        crate::task::yield_now();
     }
 
     None
