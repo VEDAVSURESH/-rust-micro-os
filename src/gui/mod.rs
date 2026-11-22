@@ -6,7 +6,7 @@
 //! - Sleek dark navy / electric blue branding and custom wallpaper
 //! - High-precision custom mouse pointer with IRQ 12 hardware tracking & keyboard fallback
 //! - Bottom taskbar with Start Menu, active window dock, live RTC clock, and network telemetry
-//! - Complete suite of 7 native applications (Terminal, Network Center, Browser, Files, SysMon, Settings, About)
+//! - Complete suite of 8 native applications (Terminal, RiftNet, Browser, Files, Games, SysMon, Settings, About)
 
 pub mod apps;
 pub mod canvas;
@@ -21,7 +21,8 @@ use crate::bga::{self, DISPLAY};
 use crate::gui::apps::about::AboutApp;
 use crate::gui::apps::browser::BrowserApp;
 use crate::gui::apps::file_manager::FileManagerApp;
-use crate::gui::apps::network_center::NetworkCenterApp;
+use crate::gui::apps::games::GamesApp;
+use crate::gui::apps::riftnet::RiftNetApp;
 use crate::gui::apps::settings::SettingsApp;
 use crate::gui::apps::system_monitor::SystemMonitorApp;
 use crate::gui::apps::terminal::TerminalApp;
@@ -34,9 +35,10 @@ use crate::sync::Spinlock;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AppKind {
     Terminal,
-    NetworkCenter,
+    RiftNet,
     WebBrowser,
     FileManager,
+    Games,
     SystemMonitor,
     Settings,
     About,
@@ -57,9 +59,10 @@ pub struct Desktop {
 
     // App instances
     pub terminal: TerminalApp,
-    pub network_center: NetworkCenterApp,
+    pub riftnet: RiftNetApp,
     pub browser: BrowserApp,
     pub file_manager: FileManagerApp,
+    pub games: GamesApp,
     pub system_monitor: SystemMonitorApp,
     pub settings: SettingsApp,
     pub about: AboutApp,
@@ -77,16 +80,17 @@ impl Desktop {
             prev_left_button: false,
             dragging_win_idx: None,
             terminal: TerminalApp::new(),
-            network_center: NetworkCenterApp::new(),
+            riftnet: RiftNetApp::new(),
             browser: BrowserApp::new(),
             file_manager: FileManagerApp::new(),
+            games: GamesApp::new(),
             system_monitor: SystemMonitorApp::new(),
             settings: SettingsApp::new(),
             about: AboutApp::new(),
         };
 
-        // Open default startup windows: Terminal and Network Center
-        d.open_app(AppKind::NetworkCenter);
+        // Open default startup windows: Terminal and RiftNet Manager
+        d.open_app(AppKind::RiftNet);
         d.open_app(AppKind::Terminal);
 
         d
@@ -108,13 +112,14 @@ impl Desktop {
         self.next_win_id += 1;
 
         let (title, x, y, w, h) = match kind {
-            AppKind::Terminal => ("Terminal - JainOS Shell (vedav)", 140, 70, 560, 360),
-            AppKind::NetworkCenter => ("Network Center - Intel e1000", 200, 110, 560, 380),
-            AppKind::WebBrowser => ("Web Browser - JainOS HTTP Client", 180, 80, 580, 400),
+            AppKind::Terminal => ("Terminal - JainOS Shell (vedav)", 120, 60, 560, 360),
+            AppKind::RiftNet => ("RiftNet - Dual Network Control Center", 180, 80, 600, 410),
+            AppKind::WebBrowser => ("Web Browser - JainOS HTML Web Client", 150, 70, 580, 400),
             AppKind::FileManager => ("File Manager - Virtual File System", 160, 90, 540, 370),
-            AppKind::SystemMonitor => ("System Monitor - Kernel Telemetry", 220, 100, 520, 380),
-            AppKind::Settings => ("Settings - System Configuration", 240, 120, 480, 320),
-            AppKind::About => ("About JainOS - Micro Operating System", 210, 100, 540, 360),
+            AppKind::Games => ("JainOS Arcade - Retro 4-Game Suite", 170, 75, 560, 380),
+            AppKind::SystemMonitor => ("System Monitor - Kernel Telemetry", 210, 100, 520, 380),
+            AppKind::Settings => ("Settings - System Configuration", 230, 120, 480, 320),
+            AppKind::About => ("About JainOS - Micro Operating System", 200, 100, 540, 360),
         };
 
         let mut win = Window::new(id, String::from(title), x, y, w, h);
@@ -159,13 +164,14 @@ impl Desktop {
         while let Some(c) = crate::keyboard::read_char() {
             match c {
                 '\u{F1}' => self.open_app(AppKind::Terminal),
-                '\u{F2}' => self.open_app(AppKind::NetworkCenter),
+                '\u{F2}' => self.open_app(AppKind::RiftNet),
                 '\u{F3}' => self.open_app(AppKind::WebBrowser),
                 '\u{F4}' => self.open_app(AppKind::FileManager),
-                '\u{F5}' => self.open_app(AppKind::SystemMonitor),
-                '\u{F6}' => self.open_app(AppKind::Settings),
-                '\u{F7}' => self.open_app(AppKind::About),
-                '\u{F8}' => self.start_menu_open = !self.start_menu_open,
+                '\u{F5}' => self.open_app(AppKind::Games),
+                '\u{F6}' => self.open_app(AppKind::SystemMonitor),
+                '\u{F7}' => self.open_app(AppKind::Settings),
+                '\u{F8}' => self.open_app(AppKind::About),
+                '\u{F9}' => self.start_menu_open = !self.start_menu_open,
                 '\t' => {
                     // Cycle window focus
                     if self.windows.len() > 1 {
@@ -182,6 +188,7 @@ impl Desktop {
                             match top_win.kind {
                                 AppKind::Terminal => self.terminal.handle_char(c),
                                 AppKind::WebBrowser => self.browser.handle_char(c),
+                                AppKind::Games => self.games.handle_char(c),
                                 _ => {}
                             }
                         }
@@ -263,9 +270,10 @@ impl Desktop {
                 TaskbarAction::LaunchApp(app_icon) => {
                     let kind = match app_icon {
                         AppIconType::Terminal => AppKind::Terminal,
-                        AppIconType::NetworkCenter => AppKind::NetworkCenter,
+                        AppIconType::RiftNet => AppKind::RiftNet,
                         AppIconType::WebBrowser => AppKind::WebBrowser,
                         AppIconType::FileManager => AppKind::FileManager,
+                        AppIconType::Games => AppKind::Games,
                         AppIconType::SystemMonitor => AppKind::SystemMonitor,
                         AppIconType::Settings => AppKind::Settings,
                         AppIconType::About => AppKind::About,
@@ -324,9 +332,10 @@ impl Desktop {
 
                             match self.windows[idx].kind {
                                 AppKind::Terminal => {}
-                                AppKind::NetworkCenter => self.network_center.handle_click(rel_x, rel_y),
+                                AppKind::RiftNet => self.riftnet.handle_click(rel_x, rel_y),
                                 AppKind::WebBrowser => self.browser.handle_click(rel_x, rel_y),
                                 AppKind::FileManager => self.file_manager.handle_click(rel_x, rel_y),
+                                AppKind::Games => self.games.handle_click(rel_x, rel_y),
                                 AppKind::Settings => {
                                     if let Some((nw, nh)) = self.settings.handle_click(rel_x, rel_y) {
                                         self.switch_resolution(nw, nh);
@@ -355,9 +364,10 @@ impl Desktop {
                 if let Some(app_type) = hit_test_icon(mouse.x, mouse.y) {
                     let kind = match app_type {
                         AppIconType::Terminal => AppKind::Terminal,
-                        AppIconType::NetworkCenter => AppKind::NetworkCenter,
+                        AppIconType::RiftNet => AppKind::RiftNet,
                         AppIconType::WebBrowser => AppKind::WebBrowser,
                         AppIconType::FileManager => AppKind::FileManager,
+                        AppIconType::Games => AppKind::Games,
                         AppIconType::SystemMonitor => AppKind::SystemMonitor,
                         AppIconType::Settings => AppKind::Settings,
                         AppIconType::About => AppKind::About,
@@ -381,9 +391,10 @@ impl Desktop {
 
                 match dwin.kind {
                     AppKind::Terminal => self.terminal.draw(&mut self.canvas, cx, cy, cw, ch),
-                    AppKind::NetworkCenter => self.network_center.draw(&mut self.canvas, cx, cy, cw, ch),
+                    AppKind::RiftNet => self.riftnet.draw(&mut self.canvas, cx, cy, cw, ch),
                     AppKind::WebBrowser => self.browser.draw(&mut self.canvas, cx, cy, cw, ch),
                     AppKind::FileManager => self.file_manager.draw(&mut self.canvas, cx, cy, cw, ch),
+                    AppKind::Games => self.games.draw(&mut self.canvas, cx, cy, cw, ch),
                     AppKind::SystemMonitor => self.system_monitor.draw(&mut self.canvas, cx, cy, cw, ch),
                     AppKind::Settings => self.settings.draw(&mut self.canvas, cx, cy, cw, ch),
                     AppKind::About => self.about.draw(&mut self.canvas, cx, cy, cw, ch),

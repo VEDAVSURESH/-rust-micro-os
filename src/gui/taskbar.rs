@@ -10,7 +10,7 @@ use alloc::string::String;
 
 pub const TASKBAR_HEIGHT: usize = 36;
 pub const START_MENU_WIDTH: i32 = 220;
-pub const START_MENU_HEIGHT: i32 = 280;
+pub const START_MENU_HEIGHT: i32 = 308;
 
 #[derive(Debug, Clone)]
 pub struct TaskbarTab {
@@ -37,11 +37,12 @@ pub struct StartMenuItem {
     pub is_reboot: bool,
 }
 
-pub const START_ITEMS: [StartMenuItem; 8] = [
+pub const START_ITEMS: [StartMenuItem; 9] = [
     StartMenuItem { label: "Terminal", icon_type: Some(AppIconType::Terminal), is_reboot: false },
-    StartMenuItem { label: "Network Center", icon_type: Some(AppIconType::NetworkCenter), is_reboot: false },
+    StartMenuItem { label: "RiftNet Manager", icon_type: Some(AppIconType::RiftNet), is_reboot: false },
     StartMenuItem { label: "Web Browser", icon_type: Some(AppIconType::WebBrowser), is_reboot: false },
     StartMenuItem { label: "File Manager", icon_type: Some(AppIconType::FileManager), is_reboot: false },
+    StartMenuItem { label: "Arcade Games", icon_type: Some(AppIconType::Games), is_reboot: false },
     StartMenuItem { label: "System Monitor", icon_type: Some(AppIconType::SystemMonitor), is_reboot: false },
     StartMenuItem { label: "Settings", icon_type: Some(AppIconType::Settings), is_reboot: false },
     StartMenuItem { label: "About JainOS", icon_type: Some(AppIconType::About), is_reboot: false },
@@ -84,7 +85,7 @@ pub fn draw_taskbar(
     // 3. Open Window Tabs
     let mut tab_x = start_x + start_w + 12;
     for tab in tabs {
-        let tab_w = 140;
+        let tab_w = 130;
         let tab_h = 28;
         let tab_y = bar_y + 4;
 
@@ -105,8 +106,8 @@ pub fn draw_taskbar(
 
         // Title clipped to fit button
         let mut display_title = tab.title.clone();
-        if display_title.len() > 13 {
-            display_title.truncate(11);
+        if display_title.len() > 12 {
+            display_title.truncate(10);
             display_title.push_str("..");
         }
         canvas.draw_string(tab_x + 16, tab_y + 6, &display_title, text_color);
@@ -259,7 +260,7 @@ pub fn handle_taskbar_click(
         // Window Tabs
         let mut tab_x = 6 + 94 + 12;
         for tab in tabs {
-            let tab_w = 140;
+            let tab_w = 130;
             if mx >= tab_x && mx < tab_x + tab_w {
                 return TaskbarAction::SelectWindow(tab.window_id);
             }

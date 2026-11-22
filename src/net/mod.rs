@@ -19,6 +19,7 @@ pub mod icmp;
 pub mod ipv4;
 pub mod tcp;
 pub mod udp;
+pub mod wifi_bridge;
 
 use alloc::string::String;
 use alloc::vec::Vec;
@@ -570,48 +571,18 @@ pub fn ping(target_str: &str) {
     );
 }
 
-/// Implementation of the `curl` terminal command.
-pub fn curl(url: &str) {
-    // Parse URL (e.g. "http://example.com/" or "10.0.2.2")
-    let raw = url.trim();
-    let path_start = raw.find("://").map(|i| i + 3).unwrap_or(0);
-    let host_and_path = &raw[path_start..];
-
-    let (host, path) = match host_and_path.find('/') {
-        Some(idx) => (&host_and_path[..idx], &host_and_path[idx..]),
-        None => (host_and_path, "/"),
-    };
-
-    let (host_clean, port) = match host.find(':') {
-        Some(idx) => (&host[..idx], host[idx + 1..].parse::<u16>().unwrap_or(80)),
-        None => (host, 80),
-    };
-
-    println!("Connecting to {} (port {})...", host_clean, port);
-    serial_println!("Connecting to {} (port {})...", host_clean, port);
-
-    let target_ip = match resolve_host(host_clean) {
-        Some(ip) => ip,
-        None => {
-            println!("curl: Could not resolve host: {}", host_clean);
-            serial_println!("curl: Could not resolve host: {}", host_clean);
-            return;
-        }
-    };
-
-    println!(
-        "Connecting to {}.{}.{}.{}:{}...",
-        target_ip[0], target_ip[1], target_ip[2], target_ip[3], port
-    );
-    serial_println!(
-        "Connecting to {}.{}.{}.{}:{}...",
-        target_ip[0], target_ip[1], target_ip[2], target_ip[3], port
-    );
-
+/// Sends arbitrary data over a single-shot TCP connection and collects response bytes.
+pub fn tcp_request(target_ip: [u8; 4], port: u16, payload: &[u8], timeout_ticks: u64) -> Result<Vec<u8>, &'static str> {
     let cfg = *NET_CONFIG.lock();
+    if !cfg.configured {
+        return Err("Network unconfigured");
+    }
+
     let src_port = 49152 + (crate::timer::current_ticks() as u16 % 10000);
     let mut my_seq = 1000u32;
     let mut my_ack = 0u32;
+
+    TCP_RX_QUEUE.lock().clear();
 
     // 1. Send TCP SYN
     let syn_pkt = tcp::build_tcp_segment(
@@ -625,16 +596,17 @@ pub fn curl(url: &str) {
         64240,
         &[],
     );
-    send_ipv4_packet(target_ip, IP_PROTO_TCP, &syn_pkt);
+    if !send_ipv4_packet(target_ip, IP_PROTO_TCP, &syn_pkt) {
+        return Err("Failed to transmit SYN packet");
+    }
     my_seq += 1;
-
-    TCP_RX_QUEUE.lock().clear();
 
     // 2. Wait for SYN-ACK
     let mut connected = false;
     let start_tick = crate::timer::current_ticks();
+    let syn_timeout = timeout_ticks.min(250).max(50);
 
-    while crate::timer::current_ticks().saturating_sub(start_tick) < 300 {
+    while crate::timer::current_ticks().saturating_sub(start_tick) < syn_timeout {
         poll();
         let pkt_opt = {
             let mut q = TCP_RX_QUEUE.lock();
@@ -660,9 +632,7 @@ pub fn curl(url: &str) {
     }
 
     if !connected {
-        println!("curl: Failed to connect to host (connection timed out)");
-        serial_println!("curl: Failed to connect to host (connection timed out)");
-        return;
+        return Err("TCP connection timed out");
     }
 
     // 3. Send TCP ACK
@@ -679,30 +649,28 @@ pub fn curl(url: &str) {
     );
     send_ipv4_packet(target_ip, IP_PROTO_TCP, &ack_pkt);
 
-    // 4. Send HTTP GET Request
-    let request_str = alloc::format!(
-        "GET {} HTTP/1.1\r\nHost: {}\r\nUser-Agent: JainOS/0.1.0 (Rust-BareMetal)\r\nAccept: */*\r\nConnection: close\r\n\r\n",
-        path, host_clean
-    );
-    let psh_pkt = tcp::build_tcp_segment(
-        cfg.ip,
-        target_ip,
-        src_port,
-        port,
-        my_seq,
-        my_ack,
-        tcp::TCP_FLAG_PSH | tcp::TCP_FLAG_ACK,
-        64240,
-        request_str.as_bytes(),
-    );
-    send_ipv4_packet(target_ip, IP_PROTO_TCP, &psh_pkt);
-    my_seq += request_str.len() as u32;
+    // 4. Send Payload if present
+    if !payload.is_empty() {
+        let psh_pkt = tcp::build_tcp_segment(
+            cfg.ip,
+            target_ip,
+            src_port,
+            port,
+            my_seq,
+            my_ack,
+            tcp::TCP_FLAG_PSH | tcp::TCP_FLAG_ACK,
+            64240,
+            payload,
+        );
+        send_ipv4_packet(target_ip, IP_PROTO_TCP, &psh_pkt);
+        my_seq += payload.len() as u32;
+    }
 
-    // 5. Receive HTTP Response
+    // 5. Receive Response
     let mut response_body = Vec::new();
     let rx_start = crate::timer::current_ticks();
 
-    while crate::timer::current_ticks().saturating_sub(rx_start) < 400 {
+    while crate::timer::current_ticks().saturating_sub(rx_start) < timeout_ticks {
         poll();
         let pkt_opt = {
             let mut q = TCP_RX_QUEUE.lock();
@@ -760,12 +728,117 @@ pub fn curl(url: &str) {
         crate::task::yield_now();
     }
 
-    if response_body.is_empty() {
-        println!("curl: Empty reply from server");
-        serial_println!("curl: Empty reply from server");
+    Ok(response_body)
+}
+
+/// Performs an HTTP GET request and returns (status_code, headers, body).
+pub fn http_get(url: &str) -> Result<(u16, String, String), String> {
+    let raw = url.trim();
+    let path_start = raw.find("://").map(|i| i + 3).unwrap_or(0);
+    let host_and_path = &raw[path_start..];
+
+    let (host, path) = match host_and_path.find('/') {
+        Some(idx) => (&host_and_path[..idx], &host_and_path[idx..]),
+        None => (host_and_path, "/"),
+    };
+
+    let (host_clean, port) = match host.find(':') {
+        Some(idx) => (&host[..idx], host[idx + 1..].parse::<u16>().unwrap_or(80)),
+        None => (host, 80),
+    };
+
+    let target_ip = resolve_host(host_clean)
+        .ok_or_else(|| alloc::format!("Could not resolve host: {}", host_clean))?;
+
+    let req_str = alloc::format!(
+        "GET {} HTTP/1.1\r\nHost: {}\r\nUser-Agent: JainOS/0.3.0 (Rust-BareMetal)\r\nAccept: */*\r\nConnection: close\r\n\r\n",
+        path, host_clean
+    );
+
+    let raw_resp = tcp_request(target_ip, port, req_str.as_bytes(), 400)
+        .map_err(|e| alloc::format!("TCP error: {}", e))?;
+
+    if raw_resp.is_empty() {
+        return Err(String::from("Empty reply from server"));
+    }
+
+    let resp_str = String::from_utf8_lossy(&raw_resp);
+
+    // Split headers and body
+    let (head_part, body_part) = if let Some(pos) = resp_str.find("\r\n\r\n") {
+        (&resp_str[..pos], &resp_str[pos + 4..])
+    } else if let Some(pos) = resp_str.find("\n\n") {
+        (&resp_str[..pos], &resp_str[pos + 2..])
     } else {
-        let resp_str = String::from_utf8_lossy(&response_body);
-        println!("{}", resp_str);
-        serial_println!("{}", resp_str);
+        (resp_str.as_ref(), "")
+    };
+
+    let status_code = head_part
+        .lines()
+        .next()
+        .and_then(|line| {
+            let mut parts = line.split_whitespace();
+            parts.next()?; // HTTP/1.1
+            parts.next()?.parse::<u16>().ok()
+        })
+        .unwrap_or(200);
+
+    Ok((status_code, String::from(head_part), String::from(body_part)))
+}
+
+/// Implementation of the `curl` terminal command.
+pub fn curl(url: &str) {
+    let raw = url.trim();
+    let path_start = raw.find("://").map(|i| i + 3).unwrap_or(0);
+    let host_and_path = &raw[path_start..];
+
+    let (host, _path) = match host_and_path.find('/') {
+        Some(idx) => (&host_and_path[..idx], &host_and_path[idx..]),
+        None => (host_and_path, "/"),
+    };
+
+    let (host_clean, port) = match host.find(':') {
+        Some(idx) => (&host[..idx], host[idx + 1..].parse::<u16>().unwrap_or(80)),
+        None => (host, 80),
+    };
+
+    println!("Connecting to {} (port {})...", host_clean, port);
+    serial_println!("Connecting to {} (port {})...", host_clean, port);
+
+    let target_ip = match resolve_host(host_clean) {
+        Some(ip) => ip,
+        None => {
+            println!("curl: Could not resolve host: {}", host_clean);
+            serial_println!("curl: Could not resolve host: {}", host_clean);
+            return;
+        }
+    };
+
+    println!(
+        "Connecting to {}.{}.{}.{}:{}...",
+        target_ip[0], target_ip[1], target_ip[2], target_ip[3], port
+    );
+    serial_println!(
+        "Connecting to {}.{}.{}.{}:{}...",
+        target_ip[0], target_ip[1], target_ip[2], target_ip[3], port
+    );
+
+    match http_get(url) {
+        Ok((_status, headers, body)) => {
+            println!("{}\r\n\r\n{}", headers, body);
+            serial_println!("{}\r\n\r\n{}", headers, body);
+        }
+        Err(e) => {
+            if e.contains("timed out") {
+                println!("curl: Failed to connect to host (connection timed out)");
+                serial_println!("curl: Failed to connect to host (connection timed out)");
+            } else if e.contains("Empty reply") {
+                println!("curl: Empty reply from server");
+                serial_println!("curl: Empty reply from server");
+            } else {
+                println!("curl: {}", e);
+                serial_println!("curl: {}", e);
+            }
+        }
     }
 }

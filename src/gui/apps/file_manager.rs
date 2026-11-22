@@ -16,7 +16,7 @@ pub struct VfsEntry {
     pub content: &'static str,
 }
 
-pub const VFS_FILES: [VfsEntry; 13] = [
+pub const VFS_FILES: [VfsEntry; 14] = [
     // /system
     VfsEntry { name: "kernel.bin", dir: "/system", size: 1424896, is_dir: false, content: "[ELF64 Executable: JainOS x86_64 Bare-Metal Microkernel]" },
     VfsEntry { name: "boot.sys",   dir: "/system", size: 512,     is_dir: false, content: "JainOS Legacy BIOS Boot Sector\nSignature: 0x55AA\nTarget: x86_64 Long Mode" },
@@ -25,14 +25,15 @@ pub const VFS_FILES: [VfsEntry; 13] = [
 
     // /network
     VfsEntry { name: "e1000.sys",   dir: "/network", size: 16384, is_dir: false, content: "Intel 82540EM Gigabit Ethernet NIC Driver\nPCI 00:03.0 | Status: 1000 Mbps Full-Duplex" },
+    VfsEntry { name: "riftnet.sys", dir: "/network", size: 8192,  is_dir: false, content: "RiftNet Dual-Stack Bridge Controller\nHost Gateway: 10.0.2.2:19820 (TCP Wi-Fi Telemetry)" },
     VfsEntry { name: "dhcp.conf",   dir: "/network", size: 128,   is_dir: false, content: "interface=eth0\nbootp=dynamic\nrequest=ip,subnet,router,dns" },
     VfsEntry { name: "resolv.conf", dir: "/network", size: 64,    is_dir: false, content: "nameserver 10.0.2.3\nsearch jainos.internal\ntimeout 3" },
     VfsEntry { name: "hosts",       dir: "/network", size: 96,    is_dir: false, content: "127.0.0.1   localhost\n10.0.2.15   jainos\n1.1.1.1     one.one.one.one\n142.250.190.46 google.com" },
 
     // /user/vedav
-    VfsEntry { name: "profile.txt", dir: "/user/vedav", size: 256, is_dir: false, content: "User: vedav\nFull Name: Vedav Suresh\nRole: Lead Operating System Developer\nUSN: 25BTRCL280\nSystem: JainOS v0.2.0 (Rust Micro-OS)" },
-    VfsEntry { name: "welcome.txt", dir: "/user/vedav", size: 384, is_dir: false, content: "Welcome to JainOS Graphical Desktop!\nBuilt entirely from scratch using pure Rust (#![no_std]).\nFeatures native window management, e1000 driver, TCP/IP stack, and shell." },
-    VfsEntry { name: "project.rs",  dir: "/user/vedav", size: 512, is_dir: false, content: "fn main() {\n    let os = \"JainOS\";\n    let author = \"Vedav Suresh\";\n    println!(\"Running {} developed by {}\", os, author);\n}" },
+    VfsEntry { name: "profile.txt", dir: "/user/vedav", size: 256, is_dir: false, content: "User: vedav\nFull Name: Vedav Suresh\nRole: Lead Operating System Developer\nUSN: 25BTRCL280\nSystem: JainOS v0.3.0 (Rust Micro-OS)" },
+    VfsEntry { name: "welcome.txt", dir: "/user/vedav", size: 384, is_dir: false, content: "Welcome to JainOS Graphical Desktop v0.3.0!\nBuilt entirely from scratch using pure Rust (#![no_std]).\nFeatures native window management, RiftNet Wi-Fi, games, browser, and shell." },
+    VfsEntry { name: "arcade.rs",   dir: "/user/vedav", size: 512, is_dir: false, content: "// JainOS Native Games: Snake, Pong, Tic-Tac-Toe, 2048\npub fn launch_arcade() {\n    serial_println!(\"Enjoy retro games on bare-metal!\");\n}" },
 
     // /devices
     VfsEntry { name: "eth0",    dir: "/devices", size: 0, is_dir: false, content: "Device Node: Intel PRO/1000 Gigabit Network Adapter (eth0)" },
@@ -54,8 +55,19 @@ impl FileManagerApp {
         }
     }
 
-    /// Handles mouse clicks in directory tree or file list.
+    /// Handles mouse clicks in directory tree, back button, or file list.
     pub fn handle_click(&mut self, rel_x: i32, rel_y: i32) {
+        // [ < Back ] button at (8, 4, 60, 24)
+        if rel_x >= 8 && rel_x <= 68 && rel_y >= 4 && rel_y <= 28 {
+            if self.selected_dir_idx > 0 {
+                self.selected_dir_idx -= 1;
+            } else {
+                self.selected_dir_idx = DIRS.len() - 1;
+            }
+            self.selected_file_idx = None;
+            return;
+        }
+
         // Directory sidebar: rel_x < 140
         if rel_x < 140 && rel_y >= 36 && rel_y < 160 {
             let clicked_idx = ((rel_y - 36) / 26) as usize;
@@ -88,8 +100,13 @@ impl FileManagerApp {
         canvas.fill_rect(cx, cy, cw, 32, 0x001E293B);
         canvas.fill_rect(cx, cy + 32, cw, 1, 0x00334155);
 
+        // [ < Back ] button
+        canvas.draw_gradient_v(cx + 8, cy + 4, 56, 24, 0x002563EB, 0x001D4ED8);
+        canvas.draw_rect(cx + 8, cy + 4, 56, 24, 0x0060A5FA);
+        canvas.draw_string(cx + 14, cy + 8, "< Back", 0x00FFFFFF);
+
         let cur_path = format!("Path: {}", DIRS[self.selected_dir_idx]);
-        canvas.draw_string(cx + 12, cy + 8, &cur_path, 0x0038BDF8);
+        canvas.draw_string(cx + 74, cy + 8, &cur_path, 0x0038BDF8);
 
         // Split pane 1: Directory Tree (Left 140px)
         let sidebar_w = 140;

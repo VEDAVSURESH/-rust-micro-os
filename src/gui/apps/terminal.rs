@@ -11,6 +11,8 @@ use crate::gui::canvas::Canvas;
 pub struct TerminalApp {
     pub history: Vec<String>,
     pub input: String,
+    pub cmd_history: Vec<String>,
+    pub cmd_history_idx: Option<usize>,
     pub cursor_tick: usize,
     pub pending_launch: Option<crate::gui::AppKind>,
 }
@@ -20,10 +22,12 @@ impl TerminalApp {
         let mut app = Self {
             history: Vec::new(),
             input: String::new(),
+            cmd_history: Vec::new(),
+            cmd_history_idx: None,
             cursor_tick: 0,
             pending_launch: None,
         };
-        app.history.push(String::from("JainOS Interactive Shell v0.2.0 (GUI Mode)"));
+        app.history.push(String::from("JainOS Interactive Shell v0.3.0 (GUI Mode)"));
         app.history.push(String::from("Type 'help' for commands, or 'whoami' for user identity."));
         app.history.push(String::new());
         app
@@ -39,6 +43,8 @@ impl TerminalApp {
                 self.input.clear();
 
                 if !cmd.trim().is_empty() {
+                    self.cmd_history.push(cmd.clone());
+                    self.cmd_history_idx = None;
                     self.execute(&cmd);
                 }
             }
@@ -77,6 +83,13 @@ impl TerminalApp {
                 self.history.push(String::from("  pci          - Enumerate and list PCI hardware bus"));
                 self.history.push(String::from("  uname        - Print kernel architecture"));
                 self.history.push(String::from("  version      - Display operating system release and credits"));
+                self.history.push(String::from("  riftnet      - Launch RiftNet Network Manager"));
+                self.history.push(String::from("  browser      - Launch Web Browser"));
+                self.history.push(String::from("  games        - Launch Arcade Games suite (Snake, Pong, etc.)"));
+                self.history.push(String::from("  files        - Launch Virtual File Manager"));
+                self.history.push(String::from("  sysmon       - Launch System Monitor"));
+                self.history.push(String::from("  settings     - Launch Display & System Settings"));
+                self.history.push(String::from("  about        - Display About JainOS dialogue"));
                 self.history.push(String::from("  clear        - Clear terminal screen buffer"));
                 self.history.push(String::from("  reboot       - Reboot the computer"));
             }
@@ -84,10 +97,10 @@ impl TerminalApp {
                 self.history.clear();
             }
             "uname" => {
-                self.history.push(String::from("JainOS 0.2.0 x86_64 bare-metal microkernel"));
+                self.history.push(String::from("JainOS 0.3.0 x86_64 bare-metal microkernel"));
             }
             "version" => {
-                self.history.push(String::from("JainOS v0.2.0 (Phase 2 - Native Graphical Edition)"));
+                self.history.push(String::from("JainOS v0.3.0 (Phase 2 - Native Graphical Edition)"));
                 self.history.push(String::from("Developer: Vedav Suresh (USN: 25BTRCL280)"));
                 self.history.push(String::from("College OS Project: All requirements verified"));
             }
@@ -171,7 +184,7 @@ impl TerminalApp {
                 self.history.push(format!("PING {} (56 bytes of data):", target));
                 if let Some(target_ip) = crate::net::resolve_host(target) {
                     self.history.push(format!(
-                        "64 bytes from {}.{}.{}.{}: icmp_seq=1 ttl=64 time=12 ms",
+                        "64 bytes from {}.{}.{}.{}: icmp_seq=1 ttl=64 time=10 ms",
                         target_ip[0], target_ip[1], target_ip[2], target_ip[3]
                     ));
                     self.history.push(format!(
@@ -185,13 +198,25 @@ impl TerminalApp {
             "curl" => {
                 let target = args.first().copied().unwrap_or("http://example.com");
                 self.history.push(format!("Connecting to {}...", target));
-                self.history.push(String::from("HTTP/1.1 200 OK"));
-                self.history.push(String::from("Content-Type: text/html; charset=UTF-8"));
-                self.history.push(String::from("<!doctype html><html><h1>Example Domain</h1></html>"));
+                match crate::net::http_get(target) {
+                    Ok((_status, headers, body)) => {
+                        let first_header = headers.lines().next().unwrap_or("HTTP/1.1 200 OK");
+                        self.history.push(format!("{}", first_header));
+                        let first_line = body.lines().find(|l| !l.trim().is_empty()).unwrap_or("<!doctype html>");
+                        self.history.push(format!("{}", first_line));
+                    }
+                    Err(e) => {
+                        self.history.push(format!("curl: {}", e));
+                    }
+                }
             }
             "browser" | "web" => {
                 self.pending_launch = Some(crate::gui::AppKind::WebBrowser);
                 self.history.push(String::from("Opening Web Browser..."));
+            }
+            "games" | "game" | "arcade" => {
+                self.pending_launch = Some(crate::gui::AppKind::Games);
+                self.history.push(String::from("Opening JainOS Arcade Games Suite..."));
             }
             "files" | "vfs" => {
                 self.pending_launch = Some(crate::gui::AppKind::FileManager);
@@ -209,9 +234,9 @@ impl TerminalApp {
                 self.pending_launch = Some(crate::gui::AppKind::About);
                 self.history.push(String::from("Opening About JainOS..."));
             }
-            "network" | "net" => {
-                self.pending_launch = Some(crate::gui::AppKind::NetworkCenter);
-                self.history.push(String::from("Opening Network Center..."));
+            "riftnet" | "network" | "net" | "wifi" => {
+                self.pending_launch = Some(crate::gui::AppKind::RiftNet);
+                self.history.push(String::from("Opening RiftNet Network Manager..."));
             }
             "reboot" => {
                 self.history.push(String::from("Rebooting system..."));

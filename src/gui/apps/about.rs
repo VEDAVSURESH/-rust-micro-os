@@ -27,11 +27,11 @@ impl AboutApp {
         canvas.draw_string(cx + 34, cy + 24, "J", 0x0038BDF8);
 
         canvas.draw_string(cx + 72, cy + 16, "JainOS Micro Operating System", 0x00FFFFFF);
-        canvas.draw_string(cx + 72, cy + 34, "Version 0.2.0 (Native Graphical Desktop Edition)", 0x0093C5FD);
+        canvas.draw_string(cx + 72, cy + 34, "Version 0.3.0 (Native Graphical Desktop Edition)", 0x0093C5FD);
 
         // Details Container Box
-        let box_y = cy + 78;
-        let box_h = ch - 90;
+        let box_y = cy + 74;
+        let box_h = ch - 86;
         canvas.fill_rect(cx + 16, box_y, cw - 32, box_h, 0x001E293B);
         canvas.draw_rect(cx + 16, box_y, cw - 32, box_h, 0x00334155);
 
@@ -42,28 +42,29 @@ impl AboutApp {
             ("Architecture:", "x86_64 Long Mode (BIOS MBR Bootloader)"),
             ("ISO Image Size:", "~1.5 MB (Strictly below 100 MB limit)"),
             ("Network Stack:", "Intel 82540EM, ARP, IPv4, DHCP, DNS, ICMP, TCP"),
+            ("RiftNet Manager:", "Dual-Interface: Host Wi-Fi Bridge (10.0.2.2) + Virtual Eth"),
             ("Desktop Engine:", "Bochs BGA True Color Double-Buffered Canvas"),
-            ("Input System:", "PS/2 Keyboard (IRQ 1) & PS/2 Mouse (IRQ 12)"),
+            ("Games Suite:", "Snake, Pong, Tic-Tac-Toe, 2048 (Interactive)"),
             ("Active User:", "vedav (`whoami` verified)"),
         ];
 
-        let mut ly = box_y + 14;
+        let mut ly = box_y + 12;
         for (label, val) in lines.iter() {
-            if ly + 16 > cy + ch {
+            if ly + 16 > cy + ch - 36 {
                 break;
             }
             canvas.draw_string(cx + 28, ly, label, 0x0038BDF8);
-            canvas.draw_string(cx + 180, ly, val, 0x00F1F5F9);
-            ly += 22;
+            canvas.draw_string(cx + 170, ly, val, 0x00F1F5F9);
+            ly += 20;
         }
 
         // College Requirements Checklist Banner
-        if ly + 28 <= cy + ch - 12 {
-            canvas.fill_rect(cx + 24, ly + 4, cw - 48, 24, 0x000F766E);
-            canvas.draw_rect(cx + 24, ly + 4, cw - 48, 24, 0x002DD4BF);
+        if ly + 28 <= cy + ch - 8 {
+            canvas.fill_rect(cx + 24, ly + 2, cw - 48, 22, 0x000F766E);
+            canvas.draw_rect(cx + 24, ly + 2, cw - 48, 22, 0x002DD4BF);
             canvas.draw_string(
                 cx + 34,
-                ly + 8,
+                ly + 6,
                 "[PASS] All 6 College Project Requirements Successfully Satisfied",
                 0x00FFFFFF,
             );
