@@ -58,17 +58,21 @@ fn kernel_main(boot_info: &'static bootloader::BootInfo) -> ! {
     // 5. Initialize 8254 PIT (Channel 0 at 100 Hz, ~10ms per tick)
     timer::init();
 
-    // 6. Safely enable hardware CPU interrupts (sti)
+    // 6. Initialize 8042 PS/2 Keyboard Controller
+    keyboard::init();
+
+    // 7. Safely enable hardware CPU interrupts (sti)
     x86_64::instructions::interrupts::enable();
 
-    // 7. Announce initialization through structured logger
+    // 8. Announce initialization through structured logger
     log_info!("JainOS Kernel v0.1.0 boot complete.");
     log_info!("GDT, TSS, and IDT configured successfully.");
     log_info!("8259 PIC remapped (Master=32, Slave=40). IRQ0 unmasked.");
     log_info!("8254 PIT Channel 0 running at 100 Hz (10 ms per tick).");
+    log_info!("8042 PS/2 keyboard controller initialized & translation enabled.");
     log_info!("Hardware interrupts enabled (CPU IF flag active).");
 
-    // 8. Demonstrate all kernel log levels
+    // 9. Demonstrate all kernel log levels
     log_trace!("Trace: Hardware timers and interrupt controller online.");
     log_debug!("Debug: PIT divisor = 11931, PIC Master mask = 0xFE.");
     log_warn!("Warn: Legacy 8259 PIC in use (APIC recommended for SMP).");

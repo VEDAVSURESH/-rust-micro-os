@@ -1888,5 +1888,14 @@ pub fn test_scheduler_context_switching() {
         );
     }
 
+    // Clean up test tasks so they do not remain as zombie tasks constantly context switching
+    {
+        let mut sched = SCHEDULER.lock();
+        sched.ready_queue.clear();
+        let _ = sched.remove_task(id_alpha);
+        let _ = sched.remove_task(id_beta);
+        let _ = sched.remove_task(id_gamma);
+    }
+
     log_info!("Milestone 6 Stage 2D test suite PASSED.");
 }

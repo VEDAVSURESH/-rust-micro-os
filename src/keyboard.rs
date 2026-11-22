@@ -4,7 +4,7 @@
 //! decodes scancodes with modifier tracking (Shift, CapsLock, Ctrl, Alt),
 //! and enqueues decoded characters into a thread-safe ring buffer.
 
-use crate::serial::inb;
+use crate::serial::{inb, outb};
 use crate::sync::Spinlock;
 
 /// Capacity of the keyboard FIFO input ring buffer.
@@ -211,6 +211,70 @@ impl KeyboardDecoder {
 }
 
 static DECODER: Spinlock<KeyboardDecoder> = Spinlock::new(KeyboardDecoder::new());
+
+/// Initializes the 8042 PS/2 controller and keyboard interface.
+///
+/// Ensures:
+/// 1. Any lingering bytes in the 8042 output buffer are drained.
+/// 2. First PS/2 port is enabled (command 0xAE).
+/// 3. Controller configuration byte enables IRQ 1 and Scancode translation (Set 2 -> Set 1).
+/// 4. Output buffer is drained again so initial keystrokes generate clean IRQ 1 interrupts.
+pub fn init() {
+    unsafe {
+        // Wait for controller input buffer to be empty before sending commands
+        let wait_input = || {
+            let mut timeout = 100_000;
+            while (inb(0x64) & 0x02) != 0 && timeout > 0 {
+                core::hint::spin_loop();
+                timeout -= 1;
+            }
+        };
+
+        // Drain any stale bytes from the output buffer
+        for _ in 0..16 {
+            if (inb(0x64) & 0x01) != 0 {
+                let _ = inb(0x60);
+            }
+        }
+
+        // Send command 0xAE: Enable First PS/2 Port
+        wait_input();
+        outb(0x64, 0xAE);
+
+        // Read Controller Configuration Byte (Command 0x20)
+        wait_input();
+        outb(0x64, 0x20);
+
+        let mut timeout = 100_000;
+        while (inb(0x64) & 0x01) == 0 && timeout > 0 {
+            core::hint::spin_loop();
+            timeout -= 1;
+        }
+
+        if timeout > 0 {
+            let mut config = inb(0x60);
+            // Bit 0: Enable IRQ 1 (first port interrupt)
+            // Bit 4: Clear first port clock disable
+            // Bit 6: Enable translation (Set 2 to Set 1)
+            config |= 0x01; // Enable Port 1 interrupt
+            config &= !0x10; // Enable Port 1 clock
+            config |= 0x40; // Enable translation
+
+            // Write updated Controller Configuration Byte (Command 0x60)
+            wait_input();
+            outb(0x64, 0x60);
+            wait_input();
+            outb(0x60, config);
+        }
+
+        // Drain any lingering response byte
+        for _ in 0..16 {
+            if (inb(0x64) & 0x01) != 0 {
+                let _ = inb(0x60);
+            }
+        }
+    }
+}
 
 /// Invoked directly from the IRQ 1 interrupt handler.
 /// Reads the scancode from port 0x60, decodes it, and pushes any resulting character.

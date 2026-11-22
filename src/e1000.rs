@@ -114,9 +114,14 @@ impl E1000Device {
             // Write to EERD: start read (bit 0 = 1), address in bits 15:8
             self.write_reg(REG_EERD, 1 | ((addr as u32) << 8));
             let mut val = self.read_reg(REG_EERD);
-            while (val & (1 << 4)) == 0 {
+            let mut timeout = 100_000;
+            while (val & (1 << 4)) == 0 && timeout > 0 {
                 core::hint::spin_loop();
                 val = self.read_reg(REG_EERD);
+                timeout -= 1;
+            }
+            if timeout == 0 {
+                return 0;
             }
             ((val >> 16) & 0xFFFF) as u16
         }
@@ -124,9 +129,16 @@ impl E1000Device {
 
     /// Initializes the e1000 controller from a detected PCI device.
     pub fn new(pci_dev: PciDevice) -> Result<Self, &'static str> {
+        if (pci_dev.bar0 & 1) != 0 {
+            return Err("e1000 BAR0 is an I/O space BAR, memory-mapped MMIO required");
+        }
+        let bar0_phys = (pci_dev.bar0 & !0xF) as u64;
+        if bar0_phys == 0 {
+            return Err("e1000 BAR0 physical address is zero");
+        }
+
         pci_dev.enable_bus_mastering();
 
-        let bar0_phys = (pci_dev.bar0 & !0xF) as u64;
         let mmio_virt = crate::memory::map_mmio_range(bar0_phys, 128 * 1024)
             .map_err(|_| "Failed to map e1000 BAR0 MMIO space")?;
         let mmio_base = mmio_virt.as_u64() as usize;
@@ -382,7 +394,8 @@ pub fn init() -> bool {
                     "Intel e1000 initialized successfully! MAC Address: {:02x}:{:02x}:{:02x}:{:02x}:{:02x}:{:02x}",
                     mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]
                 );
-                crate::log_info!("Link status: {}", if dev.is_link_up() { "UP (Online)" } else { "DOWN" });
+                let link_up = dev.is_link_up();
+                crate::log_info!("Link status: {}", if link_up { "UP (Online)" } else { "DOWN" });
                 *E1000.lock() = Some(dev);
                 true
             }

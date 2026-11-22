@@ -170,21 +170,39 @@ pub fn enumerate_pci() {
     *PCI_DEVICES.lock() = devices;
 }
 
-/// Finds the first network adapter (e.g. Intel 82540EM / PRO/1000 MT or any Ethernet class).
+/// Finds the first supported Intel e1000 Gigabit Ethernet network adapter.
 pub fn find_nic() -> Option<PciDevice> {
     let devs = PCI_DEVICES.lock();
-    // 1. Look for Intel e1000 specifically (0x8086:0x100E or 0x100F or 0x1004)
+    // 1. Look for Intel e1000 specifically with MMIO BAR0 (bit 0 == 0)
     for dev in devs.iter() {
-        if dev.vendor_id == 0x8086 && (dev.device_id == 0x100E || dev.device_id == 0x100F || dev.device_id == 0x1004 || dev.device_id == 0x1079) {
+        if dev.vendor_id == 0x8086
+            && (dev.device_id == 0x100E
+                || dev.device_id == 0x100F
+                || dev.device_id == 0x1004
+                || dev.device_id == 0x1079
+                || dev.device_id == 0x1000
+                || dev.device_id == 0x1010
+                || dev.device_id == 0x1013
+                || dev.device_id == 0x1015
+                || dev.device_id == 0x1017
+                || dev.device_id == 0x101E)
+            && (dev.bar0 & 1) == 0
+        {
             return Some(*dev);
         }
     }
-    // 2. Fall back to any Ethernet Network Controller (Class 0x02, Subclass 0x00)
+
+    // 2. If another Ethernet NIC exists on PCI bus, guide user on VM configuration
     for dev in devs.iter() {
         if dev.class_id == 0x02 && dev.subclass_id == 0x00 {
-            return Some(*dev);
+            crate::log_warn!(
+                "Non-e1000 NIC detected at {:02x}:{:02x}.{} (Vendor: {:#06x}, Device: {:#06x}). In VirtualBox VM settings, set Network Adapter Type to 'Intel PRO/1000 MT Desktop (82540EM)'.",
+                dev.bus, dev.slot, dev.func, dev.vendor_id, dev.device_id
+            );
+            break;
         }
     }
+
     None
 }
 
