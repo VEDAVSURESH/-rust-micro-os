@@ -24,3 +24,4 @@ micro-os/research-lab/research-lab
 Thumbs.db
 *.swp
 *~
+!/build/stage_2_unreal.patch

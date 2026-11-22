@@ -3,6 +3,7 @@
 # JainOS Automated Standalone Bootable ISO Build Script
 # Author: Vedav Suresh (USN: 25BTRCL280, Section: CSE AIML-E)
 # Project: JainOS — Rust Micro Operating System
+# Compatibility: Both QEMU and Oracle VirtualBox (Legacy BIOS)
 # ==============================================================================
 
 set -euo pipefail
@@ -12,6 +13,9 @@ ROOT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 BUILD_DIR="${ROOT_DIR}/build"
 STAGE_DIR="/tmp/jainos_iso_stage"
 
+# Source Rust cargo environment if present
+source "${HOME}/.cargo/env" 2>/dev/null || true
+
 echo "=============================================================================="
 echo "          JainOS — Rust Micro Operating System Automated Build                "
 echo "   Author: Vedav Suresh  |  USN: 25BTRCL280  |  Section: CSE AIML-E          "
@@ -20,7 +24,20 @@ echo ""
 
 cd "${ROOT_DIR}"
 
-# 1. Build bare-metal Rust kernel bootimage
+# 1. Apply VirtualBox VT-x / NEM Unreal Mode fix to bootloader if needed
+BOOTLOADER_STAGE2=$(find "${HOME}/.cargo/registry/src" -name "stage_2.s" 2>/dev/null | grep "bootloader-0.9" | head -n 1 || true)
+if [ -n "${BOOTLOADER_STAGE2}" ] && [ -f "${BOOTLOADER_STAGE2}" ]; then
+    if ! grep -q "Reload unreal mode for ES before rep movsd" "${BOOTLOADER_STAGE2}"; then
+        echo "[*] Applying VirtualBox Legacy BIOS unreal mode compatibility patch to bootloader..."
+        PATCH_FILE="${BUILD_DIR}/stage_2_unreal.patch"
+        if [ -f "${PATCH_FILE}" ]; then
+            patch -p1 "${BOOTLOADER_STAGE2}" < "${PATCH_FILE}" || true
+            cargo clean -p bootloader >/dev/null 2>&1 || true
+        fi
+    fi
+fi
+
+# 2. Build bare-metal Rust kernel bootimage
 echo "[1/4] Compiling bare-metal Rust kernel and generating bootable image..."
 cargo bootimage
 
@@ -33,7 +50,7 @@ fi
 BIN_SIZE=$(stat -c%s "${BOOT_BIN}")
 echo "[+] Kernel bootimage compiled successfully! Raw size: ${BIN_SIZE} bytes ($((BIN_SIZE / 1024)) KiB)."
 
-# 2. Stage ISOLINUX and MEMDISK assets
+# 3. Stage ISOLINUX and MEMDISK assets
 echo "[2/4] Staging El Torito boot files and MEMDISK loader..."
 rm -rf "${STAGE_DIR}"
 mkdir -p "${STAGE_DIR}"
@@ -64,10 +81,10 @@ LABEL jainos
   MENU LABEL JainOS Microkernel
   KERNEL memdisk
   INITRD jainos.img
-  APPEND harddisk
+  APPEND harddisk bigraw
 EOF
 
-# 3. Create standalone bootable ISO with xorriso
+# 4. Create standalone bootable ISO with xorriso
 echo "[3/4] Generating standalone bootable ISO with xorriso..."
 ISO_OUTPUT="${BUILD_DIR}/JainOS.iso"
 mkdir -p "${BUILD_DIR}"
@@ -96,7 +113,7 @@ else
     echo "[✓] College Requirement PASSED: Final ISO (${ISO_SIZE_MB} MB) is strictly BELOW 100 MB!"
 fi
 
-# 4. Generate auxiliary VirtualBox disk images (VDI & VMDK)
+# 5. Generate auxiliary VirtualBox disk images (VDI & VMDK)
 echo "[4/4] Creating auxiliary disk images (VDI and VMDK) for VirtualBox..."
 VDI_OUTPUT="${BUILD_DIR}/JainOS.vdi"
 VMDK_OUTPUT="${BUILD_DIR}/JainOS.vmdk"

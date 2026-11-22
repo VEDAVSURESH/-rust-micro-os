@@ -1,0 +1,32 @@
+--- a/src/stage_2.s
++++ b/src/stage_2.s
+@@ -63,12 +63,25 @@ load_next_kernel_block_from_disk:
+     # copy block to 2MiB
+     push ecx
+     push esi
++    
++    # Reload unreal mode for ES before rep movsd (in case BIOS clobbered it)
++    cli
++    lgdt [gdt32info]
++    mov eax, cr0
++    or al, 1
++    mov cr0, eax
++    jmp 11f
++11:
++    mov bx, 0x10
++    mov es, bx
++    and al, 0xfe
++    mov cr0, eax
++    jmp 12f
++12:
++    sti
++
+     mov ecx, 512 / 4
+-    # move with zero extension
+-    # because we are moving a word ptr
+-    # to esi, a 32-bit register.
+     movzx esi, word ptr [dap_buffer_addr]
+-    # move from esi to edi ecx times.
+     rep movsd [edi], [esi]
+     pop esi
+     pop ecx
