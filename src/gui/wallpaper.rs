@@ -1,4 +1,4 @@
-//! Custom Wallpaper, Branding Emblem & Desktop Icons for JainOS (v0.3.1).
+//! Custom Wallpaper, Branding Emblem & Desktop Icons for JainOS (v0.3.2).
 //!
 //! Renders the deep navy gradient background, central JainOS geometric emblem,
 //! university/developer credits, and desktop application shortcuts.
@@ -89,7 +89,7 @@ pub fn draw_wallpaper(canvas: &mut Canvas, width: usize, height: usize) {
     let sub_x = cx - (subtitle.len() as i32 * 4);
     canvas.draw_string(sub_x, cy + 114, subtitle, 0x0094A3B8);
 
-    let info = "JainOS v0.3.1 • x86_64 Long Mode • Developed by Vedav Suresh";
+    let info = "JainOS v0.3.2 • x86_64 Long Mode • Developed by Vedav Suresh";
     let info_x = cx - (info.len() as i32 * 4);
     canvas.draw_string(info_x, cy + 134, info, 0x0064748B);
 

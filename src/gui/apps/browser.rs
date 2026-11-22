@@ -1,11 +1,13 @@
-//! Modern Native Web Browser Application for JainOS (v0.3.1).
+//! Modern Native Web Browser Application for JainOS (v0.3.2).
 //!
 //! Features:
 //! - Real HTTP/1.1 TCP client over bare-metal socket (`crate::net::http_get`)
+//! - Multi-tab browsing support with tab switching and new-tab creation
 //! - Modern browser UI: tab bar, toolbar, omnibox, Back/Forward/Reload/Home
 //! - Clickable hyperlinks with mouse hit-testing & auto-navigation
 //! - Multi-level HTML renderer with word-wrapping (H1-H3, paragraphs, lists, hr, tables)
 //! - Script (<script>) and Style (<style>) filter so inline code is stripped cleanly
+//! - HTML comment stripping (<!-- ... -->) and table tag parsing (<tr>, <td>, <th>)
 //! - HTML entity decoding (&amp;, &lt;, &gt;, &quot;, &nbsp;, etc.)
 //! - Proportional vertical scrollbar with interactive up/down controls
 //! - History stack with Back and Forward navigation
@@ -37,7 +39,21 @@ pub enum HtmlBlock {
     EmptyLine,
 }
 
+#[derive(Debug, Clone)]
+pub struct BrowserTab {
+    pub url: String,
+    pub page_title: String,
+    pub status: String,
+    pub history: Vec<String>,
+    pub history_idx: usize,
+    pub blocks: Vec<HtmlBlock>,
+    pub scroll_y: i32,
+    pub total_doc_height: i32,
+}
+
 pub struct BrowserApp {
+    pub tabs: Vec<BrowserTab>,
+    pub active_tab: usize,
     pub url: String,
     pub status: String,
     pub page_title: String,
@@ -54,6 +70,8 @@ pub struct BrowserApp {
 impl BrowserApp {
     pub fn new() -> Self {
         let mut app = Self {
+            tabs: Vec::new(),
+            active_tab: 0,
             url: String::from("http://example.com/"),
             status: String::from("HTTP 200 OK • Document loaded"),
             page_title: String::from("Example Domain"),
@@ -69,7 +87,137 @@ impl BrowserApp {
 
         app.history.push(app.url.clone());
         app.load_default_homepage();
+
+        // Initialize Tab 0: Example Domain
+        let tab0 = BrowserTab {
+            url: app.url.clone(),
+            page_title: app.page_title.clone(),
+            status: app.status.clone(),
+            history: app.history.clone(),
+            history_idx: app.history_idx,
+            blocks: app.blocks.clone(),
+            scroll_y: app.scroll_y,
+            total_doc_height: app.total_doc_height,
+        };
+        app.tabs.push(tab0);
+
+        // Initialize Tab 1: NeverSSL Portal
+        let tab1 = BrowserTab {
+            url: String::from("http://neverssl.com/"),
+            page_title: String::from("NeverSSL"),
+            status: String::from("HTTP 200 OK • Unencrypted Portal"),
+            history: alloc::vec![String::from("http://neverssl.com/")],
+            history_idx: 0,
+            blocks: alloc::vec![
+                HtmlBlock::Heading1(String::from("NeverSSL")),
+                HtmlBlock::Divider,
+                HtmlBlock::Heading2(String::from("What is this?")),
+                HtmlBlock::Paragraph(String::from(
+                    "This website is for when you are on captive wifi networks \
+                     and need to be redirected to a portal."
+                )),
+                HtmlBlock::Heading2(String::from("How does it work?")),
+                HtmlBlock::Paragraph(String::from(
+                    "neverssl.com will never use SSL or TLS. It resolves directly \
+                     over plain unencrypted HTTP port 80."
+                )),
+                HtmlBlock::Link {
+                    text: String::from("Return to Example Domain"),
+                    url: String::from("http://example.com/"),
+                },
+            ],
+            scroll_y: 0,
+            total_doc_height: 400,
+        };
+        app.tabs.push(tab1);
+
         app
+    }
+
+    /// Saves the current view state into the active tab record.
+    pub fn save_active_tab_state(&mut self) {
+        if self.active_tab < self.tabs.len() {
+            self.tabs[self.active_tab] = BrowserTab {
+                url: self.url.clone(),
+                page_title: self.page_title.clone(),
+                status: self.status.clone(),
+                history: self.history.clone(),
+                history_idx: self.history_idx,
+                blocks: self.blocks.clone(),
+                scroll_y: self.scroll_y,
+                total_doc_height: self.total_doc_height,
+            };
+        }
+    }
+
+    /// Switches the active view to another tab.
+    pub fn switch_tab(&mut self, new_idx: usize) {
+        if new_idx < self.tabs.len() && new_idx != self.active_tab {
+            self.save_active_tab_state();
+            self.active_tab = new_idx;
+            let tab = &self.tabs[new_idx];
+            self.url = tab.url.clone();
+            self.page_title = tab.page_title.clone();
+            self.status = tab.status.clone();
+            self.history = tab.history.clone();
+            self.history_idx = tab.history_idx;
+            self.blocks = tab.blocks.clone();
+            self.scroll_y = tab.scroll_y;
+            self.total_doc_height = tab.total_doc_height;
+            self.link_hitboxes.clear();
+        }
+    }
+
+    /// Creates and switches to a new tab.
+    pub fn new_tab(&mut self, target_url: &str) {
+        self.save_active_tab_state();
+        let tab = BrowserTab {
+            url: String::from(target_url),
+            page_title: String::from("New Tab"),
+            status: String::from("Ready"),
+            history: alloc::vec![String::from(target_url)],
+            history_idx: 0,
+            blocks: Vec::new(),
+            scroll_y: 0,
+            total_doc_height: 400,
+        };
+        self.tabs.push(tab);
+        self.active_tab = self.tabs.len() - 1;
+        self.url = String::from(target_url);
+        self.page_title = String::from("New Tab");
+        self.status = String::from("Ready");
+        self.history = alloc::vec![String::from(target_url)];
+        self.history_idx = 0;
+        self.blocks.clear();
+        self.scroll_y = 0;
+        self.total_doc_height = 400;
+        self.link_hitboxes.clear();
+
+        if target_url.contains("example.com") {
+            self.load_default_homepage();
+        } else {
+            self.fetch_url();
+        }
+    }
+
+    /// Closes the tab at `idx` if there are multiple tabs.
+    pub fn close_tab(&mut self, idx: usize) {
+        if self.tabs.len() > 1 && idx < self.tabs.len() {
+            self.tabs.remove(idx);
+            if self.active_tab >= self.tabs.len() {
+                self.active_tab = self.tabs.len() - 1;
+            }
+            let tab = &self.tabs[self.active_tab];
+            self.url = tab.url.clone();
+            self.page_title = tab.page_title.clone();
+            self.status = tab.status.clone();
+            self.history = tab.history.clone();
+            self.history_idx = tab.history_idx;
+            self.blocks = tab.blocks.clone();
+            self.scroll_y = tab.scroll_y;
+            self.total_doc_height = tab.total_doc_height;
+            self.link_hitboxes.clear();
+        }
     }
 
     /// Loads the default welcome homepage.
@@ -85,10 +233,11 @@ impl BrowserApp {
         )));
         self.blocks.push(HtmlBlock::EmptyLine);
         self.blocks.push(HtmlBlock::Heading2(String::from("JainOS Browser Capabilities")));
+        self.blocks.push(HtmlBlock::Bullet(String::from("Multi-tab navigation with tab switching and close buttons")));
         self.blocks.push(HtmlBlock::Bullet(String::from("Bare-metal TCP socket stack with SYN/ACK flow control")));
         self.blocks.push(HtmlBlock::Bullet(String::from("Domain Name System resolution over UDP port 53")));
         self.blocks.push(HtmlBlock::Bullet(String::from("HTTP/1.1 protocol compliant client with keep-alive handling")));
-        self.blocks.push(HtmlBlock::Bullet(String::from("HTML tokenizer with word-wrapping, headings, and clickable links")));
+        self.blocks.push(HtmlBlock::Bullet(String::from("HTML tokenizer with word-wrapping, headings, tables, and clickable links")));
         self.blocks.push(HtmlBlock::EmptyLine);
         self.blocks.push(HtmlBlock::Heading3(String::from("Tested Real Websites")));
         self.blocks.push(HtmlBlock::Link {
@@ -155,7 +304,31 @@ impl BrowserApp {
 
     /// Handles mouse clicks inside the Browser window.
     pub fn handle_click(&mut self, rel_x: i32, rel_y: i32) {
-        // --- Toolbar Navigation Controls (y: 26..60) ---
+        // --- Row 1: Tab Bar Clicks (y: 0..26) ---
+        if rel_y >= 0 && rel_y <= 26 {
+            let tab_w = 160;
+            for i in 0..self.tabs.len() {
+                let tx = 8 + (i as i32 * (tab_w + 4));
+                if rel_x >= tx && rel_x < tx + tab_w {
+                    // Close button 'x' hit test
+                    if rel_x >= tx + tab_w - 18 {
+                        self.close_tab(i);
+                    } else {
+                        self.switch_tab(i);
+                    }
+                    return;
+                }
+            }
+
+            // [ + ] New Tab Button hit test
+            let new_tab_x = 8 + (self.tabs.len() as i32 * (tab_w + 4));
+            if rel_x >= new_tab_x && rel_x <= new_tab_x + 24 {
+                self.new_tab("http://example.com/");
+                return;
+            }
+        }
+
+        // --- Row 2: Toolbar Navigation Controls (y: 26..60) ---
         if rel_y >= 26 && rel_y <= 58 {
             // [ ◄ ] Back Button at (8, 28, 26, 26)
             if rel_x >= 8 && rel_x < 34 {
@@ -185,7 +358,7 @@ impl BrowserApp {
             }
         }
 
-        // --- Scrollbar Clicks (Right 16px of document area: rel_x: 560..578) ---
+        // --- Scrollbar Clicks (Right 16px of document area: rel_x: 560..580) ---
         if rel_x >= 560 && rel_x <= 580 && rel_y >= 64 {
             // Top arrow [ ▲ ]
             if rel_y <= 80 {
@@ -258,9 +431,10 @@ impl BrowserApp {
             }
         }
         self.is_loading = false;
+        self.save_active_tab_state();
     }
 
-    /// Tokenizes HTML document, ignoring <style> and <script>, decoding entities.
+    /// Tokenizes HTML document, ignoring comments, <style> and <script>, decoding entities.
     pub fn parse_html(&mut self, html: &str) {
         self.blocks.clear();
         let mut cur_text = String::new();
@@ -268,12 +442,23 @@ impl BrowserApp {
         let mut tag_buf = String::new();
         let mut title_found = false;
         let mut skip_content = false; // true while inside <style> or <script>
+        let mut cur_row: Vec<String> = Vec::new();
 
         let mut i = 0;
         let bytes = html.as_bytes();
         let len = bytes.len();
 
         while i < len {
+            // Check for HTML comments <!-- ... -->
+            if bytes[i..].starts_with(b"<!--") {
+                if let Some(end) = html[i..].find("-->") {
+                    i += end + 3;
+                    continue;
+                } else {
+                    break;
+                }
+            }
+
             let b = bytes[i];
 
             if b == b'<' {
@@ -338,11 +523,8 @@ impl BrowserApp {
                             cur_text.clear();
                         }
                     } else if tag_raw.starts_with("a ") && tag_raw.contains("href=") {
-                        // Extract href
                         let href = extract_href(&tag_buf);
                         cur_text.clear();
-                        // Next text will be link text until </a>
-                        // Store href temporarily by appending marker
                         if !href.is_empty() {
                             cur_text.push_str("@@LINK@@");
                             cur_text.push_str(&href);
@@ -366,6 +548,23 @@ impl BrowserApp {
                         self.blocks.push(HtmlBlock::Divider);
                     } else if tag_raw == "br" || tag_raw == "br/" {
                         self.blocks.push(HtmlBlock::EmptyLine);
+                    } else if tag_raw == "tr" || tag_raw.starts_with("tr ") {
+                        cur_row.clear();
+                        cur_text.clear();
+                    } else if tag_raw == "/tr" {
+                        if !cur_row.is_empty() {
+                            self.blocks.push(HtmlBlock::TableRow(cur_row.clone()));
+                            cur_row.clear();
+                        }
+                        cur_text.clear();
+                    } else if tag_raw == "td" || tag_raw.starts_with("td ") || tag_raw == "th" || tag_raw.starts_with("th ") {
+                        cur_text.clear();
+                    } else if tag_raw == "/td" || tag_raw == "/th" {
+                        let cell = decode_entities(&cur_text);
+                        if !cell.trim().is_empty() {
+                            cur_row.push(cell.trim().into());
+                        }
+                        cur_text.clear();
                     } else if tag_raw == "title" {
                         cur_text.clear();
                     } else if tag_raw == "/title" {
@@ -405,24 +604,49 @@ impl BrowserApp {
     pub fn draw(&mut self, canvas: &mut Canvas, cx: i32, cy: i32, cw: i32, ch: i32) {
         self.link_hitboxes.clear();
 
-        // --- ROW 1: TAB BAR (y: cy, h: 26) ---
+        // --- ROW 1: MULTI-TAB BAR (y: cy, h: 26) ---
         canvas.fill_rect(cx, cy, cw, 26, 0x000F172A);
         canvas.fill_rect(cx, cy + 25, cw, 1, 0x00334155);
 
-        // Active Tab Pill
-        let tab_w = 190.min(cw - 60);
-        canvas.draw_gradient_v(cx + 8, cy + 3, tab_w, 23, 0x001E3A8A, 0x001E293B);
-        canvas.draw_rect(cx + 8, cy + 3, tab_w, 23, 0x0038BDF8);
+        let tab_w = 160;
+        for (i, tab) in self.tabs.iter().enumerate() {
+            let tx = cx + 8 + (i as i32 * (tab_w + 4));
+            if tx + tab_w > cx + cw - 40 {
+                break;
+            }
+            let is_active = i == self.active_tab;
+            if is_active {
+                canvas.draw_gradient_v(tx, cy + 3, tab_w, 23, 0x001E3A8A, 0x001E293B);
+                canvas.draw_rect(tx, cy + 3, tab_w, 23, 0x0038BDF8);
+            } else {
+                canvas.fill_rect(tx, cy + 5, tab_w, 21, 0x001E293B);
+                canvas.draw_rect(tx, cy + 5, tab_w, 21, 0x00334155);
+            }
 
-        // Tab globe icon & title
-        canvas.fill_rect(cx + 14, cy + 9, 8, 8, 0x0038BDF8);
-        let mut tab_title = self.page_title.clone();
-        if tab_title.len() > 16 {
-            tab_title.truncate(14);
-            tab_title.push_str("..");
+            // Tab icon (globe / square)
+            let icon_col = if is_active { 0x0038BDF8 } else { 0x0064748B };
+            canvas.fill_rect(tx + 6, cy + 9, 8, 8, icon_col);
+
+            // Tab title
+            let mut title = if is_active { self.page_title.clone() } else { tab.page_title.clone() };
+            if title.len() > 14 {
+                title.truncate(12);
+                title.push_str("..");
+            }
+            let text_col = if is_active { 0x00FFFFFF } else { 0x0094A3B8 };
+            canvas.draw_string(tx + 18, cy + 8, &title, text_col);
+
+            // Close button 'x'
+            canvas.draw_string(tx + tab_w - 14, cy + 8, "x", 0x0094A3B8);
         }
-        canvas.draw_string(cx + 26, cy + 7, &tab_title, 0x00FFFFFF);
-        canvas.draw_string(cx + tab_w - 10, cy + 7, "x", 0x0094A3B8);
+
+        // [ + ] New Tab Button
+        let new_tab_x = cx + 8 + (self.tabs.len() as i32 * (tab_w + 4));
+        if new_tab_x + 24 <= cx + cw {
+            canvas.fill_rect(new_tab_x, cy + 5, 22, 20, 0x001E293B);
+            canvas.draw_rect(new_tab_x, cy + 5, 22, 20, 0x0038BDF8);
+            canvas.draw_string(new_tab_x + 7, cy + 7, "+", 0x0038BDF8);
+        }
 
         // --- ROW 2: MODERN NAVIGATION TOOLBAR (y: cy + 26, h: 36) ---
         let tb_y = cy + 26;
@@ -617,7 +841,7 @@ impl BrowserApp {
         canvas.draw_string(cx + 24, sb_bar_y + 5, &self.status, 0x0038BDF8);
 
         // Engine badge on right
-        let engine_str = "JainOS WebEngine v0.3.1 (No-STD)";
+        let engine_str = "JainOS WebEngine v0.3.2 (No-STD)";
         let engine_w = (engine_str.len() * 8) as i32;
         canvas.draw_string(cx + cw - engine_w - 10, sb_bar_y + 5, engine_str, 0x0064748B);
     }

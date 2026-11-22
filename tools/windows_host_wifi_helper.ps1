@@ -1,4 +1,4 @@
-﻿# JainOS Windows Host Wi-Fi Helper Service (PowerShell edition v0.3.1)
+﻿# JainOS Windows Host Wi-Fi Helper Service (PowerShell edition v0.3.2)
 # Author: Vedav Suresh (USN: 25BTRCL280)
 # Project: JainOS — Rust Micro Operating System
 
@@ -7,7 +7,7 @@ $listener = New-Object System.Net.Sockets.TcpListener([System.Net.IPAddress]::An
 $listener.Start()
 
 Write-Host "================================================================" -ForegroundColor Cyan
-Write-Host "      JainOS Host Wi-Fi Helper Service (v0.3.1 - PowerShell)   " -ForegroundColor Green
+Write-Host "      JainOS Host Wi-Fi Helper Service (v0.3.2 - PowerShell)   " -ForegroundColor Green
 Write-Host "      Listening on 0.0.0.0:$port (Gateway 10.0.2.2)            " -ForegroundColor Yellow
 Write-Host "================================================================" -ForegroundColor Cyan
 
@@ -22,7 +22,48 @@ try {
         $request = $reader.ReadLine()
         Write-Host "[+] Request: $request" -ForegroundColor Gray
 
-        if ($request -match "^CONNECT (.+)") {
+        if ($request -match "^CONNECT_KEY (.+)") {
+            $payload = $matches[1].Trim()
+            $parts = $payload -split "\|", 2
+            $ssid = $parts[0].Trim()
+            $pass = if ($parts.Length -gt 1) { $parts[1].Trim() } else { $null }
+            
+            if ($pass) {
+                # Create profile with password
+                $xml = @"
+<?xml version="1.0"?>
+<WLANProfile xmlns="http://www.microsoft.com/networking/WLAN/profile/v1">
+    <name>$ssid</name>
+    <SSIDConfig>
+        <SSID><name>$ssid</name></SSID>
+    </SSIDConfig>
+    <connectionType>ESS</connectionType>
+    <connectionMode>manual</connectionMode>
+    <MSM>
+        <security>
+            <authEncryption>
+                <authentication>WPA2PSK</authentication>
+                <encryption>AES</encryption>
+                <useOneX>false</useOneX>
+            </authEncryption>
+            <sharedKey>
+                <keyType>passPhrase</keyType>
+                <protected>false</protected>
+                <keyMaterial>$pass</keyMaterial>
+            </sharedKey>
+        </security>
+    </MSM>
+</WLANProfile>
+"@
+                $tmpPath = [System.IO.Path]::GetTempFileName() + ".xml"
+                [System.IO.File]::WriteAllText($tmpPath, $xml)
+                netsh wlan add profile filename="$tmpPath" | Out-Null
+                Remove-Item -Force $tmpPath -ErrorAction SilentlyContinue
+            }
+            netsh wlan connect name="$ssid" | Out-Null
+            Start-Sleep -Seconds 1
+            $writer.WriteLine("OK:CONNECTED")
+        } elseif ($request -match "^CONNECT (.+)") {
             $ssid = $matches[1].Trim()
             netsh wlan connect name="$ssid" | Out-Null
             Start-Sleep -Seconds 1
@@ -31,10 +72,15 @@ try {
             netsh wlan disconnect | Out-Null
             Start-Sleep -Seconds 1
             $writer.WriteLine("OK:DISCONNECTED")
+        } elseif ($request -match "^WIFI_OFF") {
+            netsh wlan disconnect | Out-Null
+            $writer.WriteLine("OK:TOGGLED")
+        } elseif ($request -match "^WIFI_ON") {
+            $writer.WriteLine("OK:TOGGLED")
         } else {
             # Query interfaces
             $ifaceOut = netsh wlan show interfaces
-            $adapter = "Wi-Fi"
+            $adapter = "MediaTek Wi-Fi 6 MT7921 Wireless LAN Card"
             $state = "DISCONNECTED"
             $connectedSsid = "None"
             $signal = "0%"

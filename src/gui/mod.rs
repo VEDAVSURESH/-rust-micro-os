@@ -1,4 +1,4 @@
-//! JainOS Native Graphical Desktop Environment & Window Manager (v0.3.1).
+//! JainOS Native Graphical Desktop Environment & Window Manager (v0.3.2).
 //!
 //! Features:
 //! - Full double-buffered linear framebuffer composition (Bochs BGA True Color)
@@ -113,8 +113,8 @@ impl Desktop {
 
         let (title, x, y, w, h) = match kind {
             AppKind::Terminal => ("Terminal - JainOS Shell (vedav)", 120, 60, 560, 360),
-            AppKind::Network => ("Network - Connection & Wi-Fi Control Center", 180, 75, 610, 420),
-            AppKind::WebBrowser => ("Web Browser - JainOS HTML Web Client", 140, 55, 660, 440),
+            AppKind::Network => ("Network - Connection & Wi-Fi Control Center", 160, 60, 660, 460),
+            AppKind::WebBrowser => ("Web Browser - JainOS HTML Web Client", 140, 50, 680, 470),
             AppKind::FileManager => ("File Manager - Virtual File System", 160, 90, 540, 370),
             AppKind::Games => ("JainOS Arcade - Retro 4-Game Suite", 170, 75, 560, 380),
             AppKind::SystemMonitor => ("System Monitor - Kernel Telemetry", 210, 100, 520, 380),

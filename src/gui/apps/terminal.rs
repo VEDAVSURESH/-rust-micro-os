@@ -1,4 +1,4 @@
-//! Interactive Graphical Terminal Application for JainOS (v0.3.1).
+//! Interactive Graphical Terminal Application for JainOS (v0.3.2).
 //!
 //! Provides a full-featured terminal emulator inside a GUI window, executing
 //! kernel commands (whoami, ping, curl, mem, tasks, date, pci, ifconfig, etc.).
@@ -27,10 +27,16 @@ impl TerminalApp {
             cursor_tick: 0,
             pending_launch: None,
         };
-        app.history.push(String::from("JainOS Interactive Shell v0.3.1 (GUI Mode)"));
+        app.history.push(String::from("JainOS Interactive Shell v0.3.2 (GUI Mode)"));
         app.history.push(String::from("Type 'help' for commands, or 'whoami' for user identity."));
         app.history.push(String::new());
         app
+    }
+
+    /// Appends output line to terminal history and mirrors to serial console.
+    pub fn push_out(&mut self, s: String) {
+        crate::serial_println!("[SHELL OUT] {}", &s);
+        self.history.push(s);
     }
 
     /// Handles a keyboard character sent to this terminal window.
@@ -39,6 +45,7 @@ impl TerminalApp {
             '\n' => {
                 let cmd = self.input.clone();
                 let prompt_line = format!("vedav@jainos:~$ {}", cmd);
+                crate::serial_println!("[SHELL PROMPT] {}", &prompt_line);
                 self.history.push(prompt_line);
                 self.input.clear();
 
@@ -62,6 +69,7 @@ impl TerminalApp {
 
     /// Executes a command and appends output lines to the terminal history.
     pub fn execute(&mut self, line: &str) {
+        crate::serial_println!("[SHELL CMD] {}", line);
         let trimmed = line.trim();
         let mut parts = trimmed.split_whitespace();
         let cmd = parts.next().unwrap_or("");
@@ -69,55 +77,55 @@ impl TerminalApp {
 
         match cmd {
             "whoami" => {
-                self.history.push(String::from("vedav"));
+                self.push_out(String::from("vedav"));
             }
             "help" => {
-                self.history.push(String::from("JainOS Shell Commands:"));
-                self.history.push(String::from("  whoami       - Display current active user identity"));
-                self.history.push(String::from("  mem          - Display kernel heap and physical frame statistics"));
-                self.history.push(String::from("  tasks        - Display cooperative scheduler tasks"));
-                self.history.push(String::from("  ifconfig     - Display network interface configuration"));
-                self.history.push(String::from("  ping <host>  - Send ICMP echo requests to target host"));
-                self.history.push(String::from("  curl <url>   - Fetch web content via HTTP/TCP"));
-                self.history.push(String::from("  date         - Read current hardware CMOS RTC date & time"));
-                self.history.push(String::from("  pci          - Enumerate and list PCI hardware bus"));
-                self.history.push(String::from("  uname        - Print kernel architecture"));
-                self.history.push(String::from("  version      - Display operating system release and credits"));
-                self.history.push(String::from("  network      - Launch Network Control Center"));
-                self.history.push(String::from("  browser      - Launch Web Browser"));
-                self.history.push(String::from("  games        - Launch Arcade Games suite (Snake, Pong, etc.)"));
-                self.history.push(String::from("  files        - Launch Virtual File Manager"));
-                self.history.push(String::from("  sysmon       - Launch System Monitor"));
-                self.history.push(String::from("  settings     - Launch Display & System Settings"));
-                self.history.push(String::from("  about        - Display About JainOS dialogue"));
-                self.history.push(String::from("  clear        - Clear terminal screen buffer"));
-                self.history.push(String::from("  reboot       - Reboot the computer"));
+                self.push_out(String::from("JainOS Shell Commands:"));
+                self.push_out(String::from("  whoami       - Display current active user identity"));
+                self.push_out(String::from("  mem          - Display kernel heap and physical frame statistics"));
+                self.push_out(String::from("  tasks        - Display cooperative scheduler tasks"));
+                self.push_out(String::from("  ifconfig     - Display network interface configuration"));
+                self.push_out(String::from("  ping <host>  - Send ICMP echo requests to target host"));
+                self.push_out(String::from("  curl <url>   - Fetch web content via HTTP/TCP"));
+                self.push_out(String::from("  date         - Read current hardware CMOS RTC date & time"));
+                self.push_out(String::from("  pci          - Enumerate and list PCI hardware bus"));
+                self.push_out(String::from("  uname        - Print kernel architecture"));
+                self.push_out(String::from("  version      - Display operating system release and credits"));
+                self.push_out(String::from("  network      - Launch Network Control Center"));
+                self.push_out(String::from("  browser      - Launch Web Browser"));
+                self.push_out(String::from("  games        - Launch Arcade Games suite (Snake, Pong, etc.)"));
+                self.push_out(String::from("  files        - Launch Virtual File Manager"));
+                self.push_out(String::from("  sysmon       - Launch System Monitor"));
+                self.push_out(String::from("  settings     - Launch Display & System Settings"));
+                self.push_out(String::from("  about        - Display About JainOS dialogue"));
+                self.push_out(String::from("  clear        - Clear terminal screen buffer"));
+                self.push_out(String::from("  reboot       - Reboot the computer"));
             }
             "clear" => {
                 self.history.clear();
             }
             "uname" => {
-                self.history.push(String::from("JainOS 0.3.1 x86_64 bare-metal microkernel"));
+                self.push_out(String::from("JainOS 0.3.2 x86_64 bare-metal microkernel"));
             }
             "version" => {
-                self.history.push(String::from("JainOS v0.3.1 (Phase 2 - Native Graphical Edition)"));
-                self.history.push(String::from("Developer: Vedav Suresh (USN: 25BTRCL280)"));
-                self.history.push(String::from("College OS Project: All requirements verified"));
+                self.push_out(String::from("JainOS v0.3.2 (Phase 2 - Native Graphical Edition)"));
+                self.push_out(String::from("Developer: Vedav Suresh (USN: 25BTRCL280)"));
+                self.push_out(String::from("College OS Project: All requirements verified"));
             }
             "mem" => {
                 let stats = crate::allocator::ALLOCATOR.stats();
-                self.history.push(format!(
+                self.push_out(format!(
                     "Heap: {} KiB total | {} B used | {} B free",
                     stats.heap_size / 1024,
                     stats.total_allocated_bytes,
                     stats.total_free_bytes
                 ));
-                self.history.push(format!(
+                self.push_out(format!(
                     "Allocations: {} | Deallocations: {} | Failures: {}",
                     stats.alloc_count, stats.dealloc_count, stats.alloc_failures
                 ));
                 if let Some(mem) = crate::memory::get_physical_memory_info() {
-                    self.history.push(format!(
+                    self.push_out(format!(
                         "Physical RAM: {} frames ({} MiB safe usable)",
                         mem.total_usable_frames,
                         mem.total_usable_bytes / (1024 * 1024)
@@ -126,8 +134,8 @@ impl TerminalApp {
             }
             "tasks" => {
                 let sched = crate::task::SCHEDULER.lock();
-                self.history.push(String::from("TID | Name             | State    | Ticks"));
-                self.history.push(String::from("----+------------------+----------+-------"));
+                self.push_out(String::from("TID | Name             | State    | Ticks"));
+                self.push_out(String::from("----+------------------+----------+-------"));
                 sched.for_each_task(|tcb| {
                     let state_str = match tcb.state() {
                         crate::task::TaskState::Running => "Running",
@@ -135,7 +143,7 @@ impl TerminalApp {
                         crate::task::TaskState::Blocked => "Blocked",
                         crate::task::TaskState::Terminated => "Terminated",
                     };
-                    self.history.push(format!(
+                    self.push_out(format!(
                         "{:<3} | {:<16} | {:<8} | {}",
                         tcb.id.0, tcb.name, state_str, tcb.total_ticks
                     ));
@@ -143,7 +151,7 @@ impl TerminalApp {
             }
             "date" => {
                 let dt = crate::cmos::read_datetime();
-                self.history.push(format!(
+                self.push_out(format!(
                     "{:04}-{:02}-{:02} {:02}:{:02}:{:02} UTC",
                     dt.year, dt.month, dt.day, dt.hours, dt.minutes, dt.seconds
                 ));
@@ -151,29 +159,29 @@ impl TerminalApp {
             "ifconfig" => {
                 let cfg = *crate::net::NET_CONFIG.lock();
                 if cfg.configured {
-                    self.history.push(format!(
+                    self.push_out(format!(
                         "eth0: HWaddr {:02x}:{:02x}:{:02x}:{:02x}:{:02x}:{:02x}",
                         cfg.mac[0], cfg.mac[1], cfg.mac[2], cfg.mac[3], cfg.mac[4], cfg.mac[5]
                     ));
-                    self.history.push(format!(
+                    self.push_out(format!(
                         "      inet addr:{}.{}.{}.{}  Mask:{}.{}.{}.{}",
                         cfg.ip[0], cfg.ip[1], cfg.ip[2], cfg.ip[3],
                         cfg.subnet[0], cfg.subnet[1], cfg.subnet[2], cfg.subnet[3]
                     ));
-                    self.history.push(format!(
+                    self.push_out(format!(
                         "      Gateway:{}.{}.{}.{}  DNS:{}.{}.{}.{}",
                         cfg.gateway[0], cfg.gateway[1], cfg.gateway[2], cfg.gateway[3],
                         cfg.dns[0], cfg.dns[1], cfg.dns[2], cfg.dns[3]
                     ));
                 } else {
-                    self.history.push(String::from("eth0: Interface not configured (DHCP pending)"));
+                    self.push_out(String::from("eth0: Interface not configured (DHCP pending)"));
                 }
             }
             "pci" => {
                 let devs = crate::pci::PCI_DEVICES.lock();
-                self.history.push(format!("PCI Bus: {} devices enumerated", devs.len()));
+                self.push_out(format!("PCI Bus: {} devices enumerated", devs.len()));
                 for d in devs.iter().take(6) {
-                    self.history.push(format!(
+                    self.push_out(format!(
                         "{:02x}:{:02x}.{} {:04x}:{:04x} {}",
                         d.bus, d.slot, d.func, d.vendor_id, d.device_id, d.device_name()
                     ));
@@ -181,71 +189,71 @@ impl TerminalApp {
             }
             "ping" => {
                 let target = args.first().copied().unwrap_or("1.1.1.1");
-                self.history.push(format!("PING {} (56 bytes of data):", target));
+                self.push_out(format!("PING {} (56 bytes of data):", target));
                 if let Some(target_ip) = crate::net::resolve_host(target) {
-                    self.history.push(format!(
+                    self.push_out(format!(
                         "64 bytes from {}.{}.{}.{}: icmp_seq=1 ttl=64 time=10 ms",
                         target_ip[0], target_ip[1], target_ip[2], target_ip[3]
                     ));
-                    self.history.push(format!(
+                    self.push_out(format!(
                         "--- {} ping statistics --- 1 packets transmitted, 1 received, 0% packet loss",
                         target
                     ));
                 } else {
-                    self.history.push(format!("ping: unknown host {}", target));
+                    self.push_out(format!("ping: unknown host {}", target));
                 }
             }
             "curl" => {
                 let target = args.first().copied().unwrap_or("http://example.com");
-                self.history.push(format!("Connecting to {}...", target));
+                self.push_out(format!("Connecting to {}...", target));
                 match crate::net::http_get(target) {
                     Ok((_status, headers, body)) => {
                         let first_header = headers.lines().next().unwrap_or("HTTP/1.1 200 OK");
-                        self.history.push(format!("{}", first_header));
+                        self.push_out(format!("{}", first_header));
                         let first_line = body.lines().find(|l| !l.trim().is_empty()).unwrap_or("<!doctype html>");
-                        self.history.push(format!("{}", first_line));
+                        self.push_out(format!("{}", first_line));
                     }
                     Err(e) => {
-                        self.history.push(format!("curl: {}", e));
+                        self.push_out(format!("curl: {}", e));
                     }
                 }
             }
             "browser" | "web" => {
                 self.pending_launch = Some(crate::gui::AppKind::WebBrowser);
-                self.history.push(String::from("Opening Web Browser..."));
+                self.push_out(String::from("Opening Web Browser..."));
             }
             "games" | "game" | "arcade" => {
                 self.pending_launch = Some(crate::gui::AppKind::Games);
-                self.history.push(String::from("Opening JainOS Arcade Games Suite..."));
+                self.push_out(String::from("Opening JainOS Arcade Games Suite..."));
             }
             "files" | "vfs" => {
                 self.pending_launch = Some(crate::gui::AppKind::FileManager);
-                self.history.push(String::from("Opening File Manager..."));
+                self.push_out(String::from("Opening File Manager..."));
             }
             "sysmon" | "top" => {
                 self.pending_launch = Some(crate::gui::AppKind::SystemMonitor);
-                self.history.push(String::from("Opening System Monitor..."));
+                self.push_out(String::from("Opening System Monitor..."));
             }
             "settings" => {
                 self.pending_launch = Some(crate::gui::AppKind::Settings);
-                self.history.push(String::from("Opening Settings..."));
+                self.push_out(String::from("Opening Settings..."));
             }
             "about" => {
                 self.pending_launch = Some(crate::gui::AppKind::About);
-                self.history.push(String::from("Opening About JainOS..."));
+                self.push_out(String::from("Opening About JainOS..."));
             }
-            "network" | "net" | "wifi" | "riftnet" => {
+            "network" | "net" | "wifi" => {
                 self.pending_launch = Some(crate::gui::AppKind::Network);
-                self.history.push(String::from("Opening Network Control Center..."));
+                self.push_out(String::from("Opening Network Control Center..."));
             }
             "reboot" => {
-                self.history.push(String::from("Rebooting system..."));
+                self.push_out(String::from("Rebooting system..."));
                 unsafe {
                     crate::serial::outb(0x64, 0xFE);
                 }
             }
             other => {
-                self.history.push(format!("jsh: command not found: {}", other));
+                self.push_out(format!("jsh: command not found: {}", other));
             }
         }
     }

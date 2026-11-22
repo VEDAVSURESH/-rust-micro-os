@@ -1,4 +1,4 @@
-//! About JainOS Dialog & Project Verification Specification (v0.3.1).
+//! About JainOS Dialog & Project Verification Specification (v0.3.2).
 //!
 //! Displays operating system branding, developer credits, architecture information,
 //! and college project requirement compliance status.
@@ -27,7 +27,7 @@ impl AboutApp {
         canvas.draw_string(cx + 34, cy + 24, "J", 0x0038BDF8);
 
         canvas.draw_string(cx + 72, cy + 16, "JainOS Micro Operating System", 0x00FFFFFF);
-        canvas.draw_string(cx + 72, cy + 34, "Version 0.3.1 (Native Graphical Desktop Edition)", 0x0093C5FD);
+        canvas.draw_string(cx + 72, cy + 34, "Version 0.3.2 (Native Graphical Desktop Edition)", 0x0093C5FD);
 
         // Details Container Box
         let box_y = cy + 74;
@@ -40,10 +40,10 @@ impl AboutApp {
             ("Operating System:", "JainOS (Standalone Bare-Metal Kernel)"),
             ("Implementation:", "100% Pure Rust (#![no_std], #![no_main])"),
             ("Architecture:", "x86_64 Long Mode (BIOS MBR Bootloader)"),
-            ("ISO Image Size:", "~1.7 MB (Strictly below 100 MB limit)"),
+            ("ISO Image Size:", "~1.8 MB (Strictly below 100 MB limit)"),
             ("Network Stack:", "Intel 82540EM, ARP, IPv4, DHCP, DNS, ICMP, TCP"),
             ("Network Control:", "Dual-Interface: Host Wi-Fi Bridge (10.0.2.2) + Virtual Eth"),
-            ("Web Browser:", "JainOS WebEngine v0.3.1 (Word-Wrap, Links, Tables)"),
+            ("Web Browser:", "JainOS WebEngine v0.3.2 (Multi-Tab, Word-Wrap, Links)"),
             ("Games Suite:", "Snake, Pong, Tic-Tac-Toe, 2048 (Interactive)"),
             ("Active User:", "vedav (`whoami` verified)"),
         ];

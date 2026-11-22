@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-JainOS Windows Host Wi-Fi Helper Service (v0.3.1)
+JainOS Windows Host Wi-Fi Helper Service (v0.3.2)
 Author: Vedav Suresh (USN: 25BTRCL280)
 Project: JainOS — Rust Micro Operating System
 
@@ -14,6 +14,8 @@ import sys
 import time
 import threading
 import shutil
+import os
+import tempfile
 
 HOST = "0.0.0.0"
 PORT = 19820
@@ -21,7 +23,7 @@ NETSH_BIN = shutil.which("netsh") or shutil.which("netsh.exe") or "netsh.exe"
 
 def get_wifi_info():
     iface = {
-        "adapter": "Wi-Fi",
+        "adapter": "MediaTek Wi-Fi 6 MT7921 Wireless LAN Card",
         "state": "DISCONNECTED",
         "connected_ssid": "None",
         "signal": "0%",
@@ -33,23 +35,23 @@ def get_wifi_info():
         out = subprocess.check_output([NETSH_BIN, "wlan", "show", "interfaces"], text=True, errors="ignore")
         for line in out.splitlines():
             line = line.strip()
-            if line.startswith("Description"):
+            if line.startswith("Description") and ":" in line:
                 iface["adapter"] = line.split(":", 1)[1].strip()
-            elif line.startswith("State"):
+            elif line.startswith("State") and ":" in line:
                 val = line.split(":", 1)[1].strip().lower()
                 iface["state"] = "CONNECTED" if "connected" in val else "DISCONNECTED"
             elif line.startswith("SSID") and ":" in line and not line.startswith("SSID 1"):
                 parts = line.split(":", 1)
                 if parts[0].strip() == "SSID":
                     iface["connected_ssid"] = parts[1].strip()
-            elif line.startswith("Signal"):
+            elif line.startswith("Signal") and ":" in line:
                 iface["signal"] = line.split(":", 1)[1].strip()
-            elif line.startswith("Radio type"):
+            elif line.startswith("Radio type") and ":" in line:
                 iface["radio"] = line.split(":", 1)[1].strip()
-            elif line.startswith("Authentication"):
+            elif line.startswith("Authentication") and ":" in line:
                 iface["auth"] = line.split(":", 1)[1].strip()
     except Exception as e:
-        print(f"[-] Interface error: {e}")
+        print(f"[-] Interface query error: {e}")
 
     # Read saved profiles
     saved_profiles = set()
@@ -62,9 +64,9 @@ def get_wifi_info():
                 if prof:
                     saved_profiles.add(prof)
     except Exception as e:
-        print(f"[-] Profile error: {e}")
+        print(f"[-] Profile query error: {e}")
 
-    # Read visible networks
+    # Read visible networks from active beacon scan
     networks = []
     seen_ssids = set()
     try:
@@ -85,17 +87,17 @@ def get_wifi_info():
                     "saved": (ssid_val in saved_profiles),
                 }
             elif cur_net:
-                if line.startswith("Authentication"):
+                if line.startswith("Authentication") and ":" in line:
                     cur_net["auth"] = line.split(":", 1)[1].strip()
-                elif line.startswith("Signal"):
+                elif line.startswith("Signal") and ":" in line:
                     cur_net["signal"] = line.split(":", 1)[1].strip()
         if cur_net and cur_net["ssid"] and cur_net["ssid"] not in seen_ssids:
             networks.append(cur_net)
             seen_ssids.add(cur_net["ssid"])
     except Exception as e:
-        print(f"[-] Networks error: {e}")
+        print(f"[-] Networks query error: {e}")
 
-    # Always ensure connected network is in the list
+    # Ensure connected network is top of list
     if iface["state"] == "CONNECTED" and iface["connected_ssid"] != "None":
         if iface["connected_ssid"] not in seen_ssids:
             networks.insert(0, {
@@ -107,9 +109,9 @@ def get_wifi_info():
             })
             seen_ssids.add(iface["connected_ssid"])
 
-    # Append saved profiles that may be nearby but not beaconing immediately
+    # Append saved profiles that may not currently be beaconing
     for prof in sorted(saved_profiles):
-        if prof not in seen_ssids and len(networks) < 12:
+        if prof not in seen_ssids and len(networks) < 14:
             networks.append({
                 "ssid": prof,
                 "auth": "Saved Profile",
@@ -139,9 +141,76 @@ def get_wifi_info():
     resp_lines.append("END")
     return "\n".join(resp_lines) + "\n"
 
-def handle_connect(target_ssid):
-    print(f"[*] Attempting Wi-Fi connection to: '{target_ssid}'")
+def create_wlan_profile(ssid, password=None):
+    """Creates a Windows WLAN profile XML to allow connecting to secured networks."""
+    safe_name = ssid.replace('"', '').replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+    if password:
+        safe_pass = password.replace('"', '').replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+        xml_content = f"""<?xml version="1.0"?>
+<WLANProfile xmlns="http://www.microsoft.com/networking/WLAN/profile/v1">
+    <name>{safe_name}</name>
+    <SSIDConfig>
+        <SSID>
+            <name>{safe_name}</name>
+        </SSID>
+    </SSIDConfig>
+    <connectionType>ESS</connectionType>
+    <connectionMode>manual</connectionMode>
+    <MSM>
+        <security>
+            <authEncryption>
+                <authentication>WPA2PSK</authentication>
+                <encryption>AES</encryption>
+                <useOneX>false</useOneX>
+            </authEncryption>
+            <sharedKey>
+                <keyType>passPhrase</keyType>
+                <protected>false</protected>
+                <keyMaterial>{safe_pass}</keyMaterial>
+            </sharedKey>
+        </security>
+    </MSM>
+</WLANProfile>"""
+    else:
+        xml_content = f"""<?xml version="1.0"?>
+<WLANProfile xmlns="http://www.microsoft.com/networking/WLAN/profile/v1">
+    <name>{safe_name}</name>
+    <SSIDConfig>
+        <SSID>
+            <name>{safe_name}</name>
+        </SSID>
+    </SSIDConfig>
+    <connectionType>ESS</connectionType>
+    <connectionMode>manual</connectionMode>
+    <MSM>
+        <security>
+            <authEncryption>
+                <authentication>open</authentication>
+                <encryption>none</encryption>
+                <useOneX>false</useOneX>
+            </authEncryption>
+        </security>
+    </MSM>
+</WLANProfile>"""
+
+    tmp_file = os.path.join(tempfile.gettempdir(), f"jainos_profile_{int(time.time())}.xml")
     try:
+        with open(tmp_file, "w", encoding="utf-8") as f:
+            f.write(xml_content)
+        subprocess.run([NETSH_BIN, "wlan", "add", "profile", f"filename={tmp_file}"], capture_output=True, text=True)
+    finally:
+        if os.path.exists(tmp_file):
+            try:
+                os.remove(tmp_file)
+            except Exception:
+                pass
+
+def handle_connect(target_ssid, password=None):
+    print(f"[*] Attempting Wi-Fi connection to: '{target_ssid}' (password={'yes' if password else 'no'})")
+    try:
+        if password:
+            create_wlan_profile(target_ssid, password)
+
         res = subprocess.run([NETSH_BIN, "wlan", "connect", f"name={target_ssid}"], capture_output=True, text=True)
         time.sleep(2.0)
         # Verify connection
@@ -164,24 +233,45 @@ def handle_disconnect():
     except Exception as e:
         return f"FAIL:{e}\n"
 
+def handle_wifi_toggle(enable: bool):
+    state_str = "ENABLED" if enable else "DISABLED"
+    print(f"[*] Setting host Wi-Fi interface {state_str}...")
+    try:
+        if not enable:
+            handle_disconnect()
+        subprocess.run([NETSH_BIN, "interface", "set", "interface", "name=Wi-Fi", f"admin={state_str}"], capture_output=True)
+        return "OK:TOGGLED\n"
+    except Exception as e:
+        return f"FAIL:{e}\n"
+
 def handle_client(conn, addr):
     try:
-        conn.settimeout(4.0)
+        conn.settimeout(5.0)
         req = conn.recv(1024).decode("utf-8", errors="ignore").strip()
         print(f"[+] Request from {addr}: '{req}'")
 
-        if req.startswith("CONNECT"):
-            target = req.split(None, 1)[1].strip() if len(req.split()) > 1 else ""
-            if target:
-                resp = handle_connect(target)
-            else:
-                resp = "FAIL:Missing SSID\n"
+        if req.startswith("CONNECT_KEY "):
+            payload = req[len("CONNECT_KEY "):].strip()
+            parts = payload.split("|", 1)
+            target = parts[0].strip()
+            pwd = parts[1].strip() if len(parts) > 1 else None
+            resp = handle_connect(target, pwd)
+            conn.sendall(resp.encode("utf-8"))
+        elif req.startswith("CONNECT "):
+            target = req[len("CONNECT "):].strip()
+            resp = handle_connect(target, None)
             conn.sendall(resp.encode("utf-8"))
         elif req == "DISCONNECT":
             resp = handle_disconnect()
             conn.sendall(resp.encode("utf-8"))
+        elif req == "WIFI_ON":
+            resp = handle_wifi_toggle(True)
+            conn.sendall(resp.encode("utf-8"))
+        elif req == "WIFI_OFF":
+            resp = handle_wifi_toggle(False)
+            conn.sendall(resp.encode("utf-8"))
         else:
-            # SCAN or STATUS or default
+            # SCAN or STATUS
             resp = get_wifi_info()
             conn.sendall(resp.encode("utf-8"))
     except Exception as e:
@@ -201,8 +291,8 @@ def main():
 
     server.listen(5)
     print("================================================================")
-    print("      JainOS Host Wi-Fi Helper Service (v0.3.1)")
-    print(f"      Listening on {HOST}:{PORT} (VirtualBox gateway 10.0.2.2)")
+    print("      JainOS Host Wi-Fi Helper Service (v0.3.2)")
+    print(f"      Listening on {HOST}:{PORT} (Gateway 10.0.2.2)")
     print("      Serving genuine Windows Wi-Fi telemetry to JainOS")
     print("================================================================")
 

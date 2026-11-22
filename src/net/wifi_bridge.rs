@@ -169,6 +169,53 @@ pub fn request_connect_wifi(ssid: &str) -> bool {
     }
 }
 
+/// Requests the Windows host helper to connect to a specific Wi-Fi SSID with optional password.
+pub fn request_connect_wifi_key(ssid: &str, password: &str) -> bool {
+    let gateway_ip = {
+        let cfg = NET_CONFIG.lock();
+        if cfg.configured {
+            cfg.gateway
+        } else {
+            [10, 0, 2, 2]
+        }
+    };
+
+    let cmd = if password.is_empty() {
+        format!("CONNECT {}\n", ssid)
+    } else {
+        format!("CONNECT_KEY {}|{}\n", ssid, password)
+    };
+
+    match tcp_request(gateway_ip, 19820, cmd.as_bytes(), 300) {
+        Ok(data) => {
+            let resp = String::from_utf8_lossy(&data);
+            resp.contains("OK")
+        }
+        Err(_) => false,
+    }
+}
+
+/// Requests the Windows host helper to toggle Wi-Fi radio on/off.
+pub fn request_wifi_toggle(enable: bool) -> bool {
+    let gateway_ip = {
+        let cfg = NET_CONFIG.lock();
+        if cfg.configured {
+            cfg.gateway
+        } else {
+            [10, 0, 2, 2]
+        }
+    };
+
+    let cmd: &[u8] = if enable { b"WIFI_ON\n" } else { b"WIFI_OFF\n" };
+    match tcp_request(gateway_ip, 19820, cmd, 200) {
+        Ok(data) => {
+            let resp = String::from_utf8_lossy(&data);
+            resp.contains("OK")
+        }
+        Err(_) => false,
+    }
+}
+
 /// Requests the Windows host helper to disconnect from Wi-Fi.
 pub fn request_disconnect_wifi() -> bool {
     let gateway_ip = {
