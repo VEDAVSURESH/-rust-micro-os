@@ -2,11 +2,14 @@
 /target
 Cargo.lock
 
-# MicroOS ISO and rootfs build artifacts
-/build
+# Build artifacts
+/build/*
+!/build/build_jainos_iso.sh
 *.iso
 *.squashfs
 *.bin
+*.vdi
+*.vmdk
 
 # Temporary build directories
 /var/tmp/micro-os-build
