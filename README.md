@@ -2,7 +2,7 @@
 
 [![Language](https://img.shields.io/badge/Language-Rust%20%28no__std%29-orange.svg)](https://www.rust-lang.org/)
 [![Target](https://img.shields.io/badge/Target-x86__64--unknown--none-blue.svg)](https://doc.rust-lang.org/nightly/rustc/platform-support/x86_64-unknown-none.html)
-[![Bootable ISO](https://img.shields.io/badge/Bootable%20ISO-1.38%20MB%20%28%3C%20100%20MB%29-brightgreen.svg)](build/JainOS.iso)
+[![Bootable ISO](https://img.shields.io/badge/Bootable%20ISO-1.98%20MiB%20%28%3C%20100%20MB%29-brightgreen.svg)](build/JainOS.iso)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
 **Author:** Vedav Suresh  
@@ -26,7 +26,7 @@ JainOS features a complete custom operating system architecture:
 - Bare-metal Intel PRO/1000 MT Desktop (82540EM / e1000) Gigabit Ethernet driver operating with direct MMIO and circular DMA descriptor rings.
 - Native Rust TCP/IP network stack (Ethernet II, ARP cache, IPv4 routing, UDP, DHCP auto-configuration, DNS resolution, ICMP echo ping, and stateful TCP HTTP curl).
 - Custom interactive VGA & Serial terminal with full branding, hardware diagnostics, and execution utilities.
-- Standalone bootable ISO image (`build/JainOS.iso`) with a total footprint of **1.38 MB** (massively below the strict 100 MB college limit).
+- Standalone bootable ISO image (`build/JainOS.iso`) with a total footprint of **1.98 MiB** (massively below the strict 100 MB college limit).
 
 ---
 
@@ -35,7 +35,7 @@ JainOS features a complete custom operating system architecture:
 | # | Requirement | Status | Verification & Evidence |
 |---|-------------|--------|-------------------------|
 | **1** | Built exclusively using Rust | **PASSED** | Pure `#![no_std]` `#![no_main]` Rust kernel targeting `x86_64-unknown-none`. Zero Linux kernel dependencies. |
-| **2** | Final bootable OS image BELOW 100 MB | **PASSED** | Standalone bootable ISO is **1.38 MB** (`1,449,984 bytes`). Raw kernel bootimage is **862 KiB**. |
+| **2** | Final bootable OS image BELOW 100 MB | **PASSED** | Standalone bootable ISO is **1.98 MiB** (`2,072,576 bytes`). Raw kernel bootimage is **862 KiB**. |
 | **3** | Genuine internet connectivity | **PASSED** | Bare-metal Intel e1000 NIC driver with DMA. Acquired DHCP lease (`10.0.2.15`). Pinged Cloudflare public DNS (`1.1.1.1`) with 40-80 ms RTT. Completed TCP 3-way handshake and fetched HTTP web page via `curl`. |
 | **4** | Command `whoami` outputs `vedav` | **PASSED** | `whoami` terminal command returns exactly `vedav`. |
 | **5** | Custom identity, branding & interactive terminal | **PASSED** | Full interactive shell with custom banner, color-coded prompt `[JainOS] vedav@kernel:~$ `, and 13 built-in commands. |
@@ -176,7 +176,7 @@ sudo apt update && sudo apt install -y xorriso isolinux syslinux-common qemu-uti
 ```
 
 **Build Output:**
-- `build/JainOS.iso` (1.38 MB standalone bootable optical disc image)
+- `build/JainOS.iso` (1.98 MiB standalone bootable optical disc image)
 - `build/JainOS.vdi` (1.1 MB VirtualBox native disk image)
 - `build/JainOS.vmdk` (960 KB VMware/VirtualBox virtual disk image)
 
@@ -198,7 +198,7 @@ sudo apt update && sudo apt install -y xorriso isolinux syslinux-common qemu-uti
 | **10** | Ping public IP succeeds | ICMP echo replies with RTT ms | `64 bytes from 1.1.1.1: icmp_seq=1 ttl=255 time=40 ms` (0-25% loss) | **PASSED** |
 | **11** | DNS resolution works | A-record parsed over UDP port 53 | Translates domain names to IPv4 addresses via `10.0.2.3` | **PASSED** |
 | **12** | HTTP request works | 3-way handshake & HTTP GET | `curl http://10.0.2.2:8080/test.html` returns `HTTP/1.0 200 OK` | **PASSED** |
-| **13** | Final ISO below 100 MB | Strict size limit < 100 MB | Final ISO size is **1.38 MB** (`1,449,984 bytes`) | **PASSED** |
+| **13** | Final ISO below 100 MB | Strict size limit < 100 MB | Final ISO size is **1.98 MiB** (`2,072,576 bytes`) | **PASSED** |
 
 ---
 
