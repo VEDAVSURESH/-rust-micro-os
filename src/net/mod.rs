@@ -415,6 +415,39 @@ pub fn resolve_host(host: &str) -> Option<[u8; 4]> {
         }
     }
 
+    // Fallback: If DHCP-provided DNS server timed out (e.g. VirtualBox host switch 172.20.x.x),
+    // query public DNS resolver 1.1.1.1 (Cloudflare) on UDP port 53.
+    let fallback_dns = [1, 1, 1, 1];
+    if cfg.dns != fallback_dns {
+        let fallback_udp = udp::build_udp_packet(cfg.ip, fallback_dns, src_port + 1, dns::DNS_PORT, &query_payload);
+        DNS_RX_QUEUE.lock().clear();
+        if send_ipv4_packet(fallback_dns, IP_PROTO_UDP, &fallback_udp) {
+            let start_tick = crate::timer::current_ticks();
+            while crate::timer::current_ticks().saturating_sub(start_tick) < 150 {
+                poll();
+                let pkt_opt = {
+                    let mut q = DNS_RX_QUEUE.lock();
+                    if q.is_empty() { None } else { Some(q.remove(0)) }
+                };
+
+                if let Some(rx_data) = pkt_opt {
+                    if let Some((_eth, eth_payload)) = EthernetHeader::parse(&rx_data) {
+                        if let Some((_ip, ip_payload)) = Ipv4Header::parse(eth_payload) {
+                            if let Some((udp_h, udp_payload)) = udp::UdpHeader::parse(ip_payload) {
+                                if udp_h.src_port == dns::DNS_PORT && udp_h.dst_port == src_port + 1 {
+                                    if let Some(resolved_ip) = dns::parse_dns_response(udp_payload, tx_id) {
+                                        return Some(resolved_ip);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                crate::task::yield_now();
+            }
+        }
+    }
+
     None
 }
 
